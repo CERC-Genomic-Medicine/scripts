@@ -5,7 +5,7 @@ import pysam
 # Note: python3 + pysam library are required
 #
 # Example:
-#   python vcf_assign_maf_bins -i input.vcf.gz -o output.vcf.gz -b 0 0.001 0.005 0.01 0.05 0.1 0.5 -G -- bins into (0,0.001], (0.001,0.005], (0.005,0.01], (0.01,0.05], (0.05,0.1], (0.1,0.5] and drops genotype information
+#   python vcf_assign_maf_bins.py -i input.vcf.gz -o output.vcf.gz -b 0 0.001 0.005 0.01 0.05 0.1 0.5 -G -- bins into (0,0.001], (0.001,0.005], (0.005,0.01], (0.01,0.05], (0.05,0.1], (0.1,0.5] and drops genotype information
 #
 
 argparser = argparse.ArgumentParser(description = 'Assigns MAF bin to each alternate allele in VCF/BCF.')
