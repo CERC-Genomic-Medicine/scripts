@@ -10,3 +10,7 @@ Assigns MAF bin to each record from input VCF/BCF file. Requires `python 3` and 
 ### vcf_extract_lof.py
 
 Extracts all Loss-of-Function (LoF) variants from VCF/BCF file annotated using VEP. Requires `python 3` and `pysam` library. Type `python vcf_extract_lof.py --help` to get the description of all parameters.
+
+### vcf_add_cadd_scores.py
+
+Annotates VCF file with CADD scores from https://cadd.gs.washington.edu/download. Note: you must download also the corresponding index files. Type `python vcf_add_cadd_scores.py --help` to get the description of all parameters.
