@@ -25,7 +25,7 @@ if __name__ == '__main__':
     for min_maf, max_maf in zip(args.maf_bins, args.maf_bins[1:]):
         maf_bins.append((min_maf, max_maf, f'({min_maf}, {max_maf}]'))
 
-    with pysam.VariantFile(args.in_VCF, 'r') as vcf_in, pysam.VariantFile(args.out_VCF, 'w') as vcf_out:
+    with pysam.VariantFile(args.in_VCF, 'r', drop_samples = args.drop_gt) as vcf_in, pysam.VariantFile(args.out_VCF, 'w') as vcf_out:
         # check if requested INFO field is present
         if not args.af_key in vcf_in.header.info:
             raise Exception(f'No meta-information entry about {args.af_key} INFO field found!')
@@ -44,16 +44,7 @@ if __name__ == '__main__':
         
         # read input VCF records
         for record_in in vcf_in:
-            if args.drop_gt: # don't output sample-level GT information
-                record_out = vcf_out.new_record(
-                    contig = record_in.contig,
-                    start = record_in.start,
-                    stop = record_in.stop,
-                    alleles = record_in.alleles,
-                    filter = record_in.filter,
-                    info = record_in.info)
-            else:
-                record_out = record_in.copy()
+            record_out = record_in.copy()
 
             if args.af_key not in record_out.info:
                 continue
@@ -71,7 +62,6 @@ if __name__ == '__main__':
                             break
                 if not bin_assigned:
                     assigned_maf_bins.append(None)
-
             record_out.info['MAF_BIN'] = assigned_maf_bins if assigned_maf_bins else None
 
             # Write new VCF record
