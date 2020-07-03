@@ -56,13 +56,16 @@ if __name__ == '__main__':
         for record_in in vcf_in:
             record_out = record_in.copy()
 
-            if args.af_key not in record_out.info:
-                continue
-
             # Assign MAF bin and save it to the INFO field
             assigned_af_bins = []
-            for af in record_out.info[args.af_key]:
-                assigned_af_bins.append(assign_bin(af_bins, af))
+            if args.af_key not in record_out.info:
+                for i in enumerate(record_out.alts):
+                    assigned_af_bins.append("None")
+            else:
+                assigned_af_bins = []
+                for af in record_out.info[args.af_key]:
+                    assigned_af_bins.append(assign_bin(af_bins, af))
+            
             record_out.info['AF_BIN'] = assigned_af_bins if assigned_af_bins else None
 
             # Write new VCF record
