@@ -22,3 +22,8 @@ Annotates VCF file with CADD scores from https://cadd.gs.washington.edu/download
 ### vcf_assign_depth_bins.py
 
 Assigns AD (allele depth) and DP (total depth) bin to each record from input **single sample** VCF/BCF file. Requires `python 3` and `pysam` library. Type `python vcf_assign_depth_bins.py --help` to get the description of all parameters. You can also pipe input/ouput files from/into standard input/output by specifying `-` instead of file names.
+
+
+### vcf_lof_downsample.py
+
+Subsets random sample from the specified VCF/BCF file and counts number of putative Loss-of-Function variants in the sample. Requires `python 3` and `pysam` library. Requires VCF/BCF file annotated using VEP+LOFTEE. Type `python vcf_lof_downsample.py --help` to get the description of all parameters.
