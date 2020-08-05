@@ -31,3 +31,7 @@ Subsets random sample from the specified VCF/BCF file and counts number of putat
 ### gencode_cds.py
 
 Extracts CDS (coding sequence regions) for each protein coding gene from GENCODE GTF file. For each gene, it uses a union of CDS regions from all protein coding transcripts. Requires `python 3` and `intervaltree` library. Type `python gencode_cds.py --help` to get the description of all parameters.
+
+### gencode_utr.py
+
+Extracts 5' UTR and 3' UTR regions for each protein coding gene from GENCODE GTF file. For each gene, it uses a union of UTR regions from all protein coding transcripts. Requires `python 3` and `intervaltree` library. Type `python gencode_utr.py --help` to get the description of all parameters.
