@@ -27,3 +27,7 @@ Assigns AD (allele depth) and DP (total depth) bin to each record from input **s
 ### vcf_lof_downsample.py
 
 Subsets random sample from the specified VCF/BCF file and counts number of putative Loss-of-Function variants in the sample. Requires `python 3` and `pysam` library. Requires VCF/BCF file annotated using VEP+LOFTEE. Type `python vcf_lof_downsample.py --help` to get the description of all parameters.
+
+### gencode_cds.py
+
+Extracts CDS (coding sequence regions) for each protein coding gene from GENCODE GTF file. For each gene, it uses a union of CDS regions from all protein coding transcripts. Requires `python 3` and `intervaltree` library. Type `python gencode_cds.py --help` to get the description of all parameters.
