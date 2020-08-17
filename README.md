@@ -36,6 +36,6 @@ Extracts CDS (coding sequence regions) for each protein coding gene from GENCODE
 
 Extracts 5' UTR and 3' UTR regions for each protein coding gene from GENCODE GTF file. For each gene, it uses a union of UTR regions from all protein coding transcripts. Requires `python 3` and `intervaltree` library. Type `python gencode_utr.py --help` to get the description of all parameters.
 
-### gencode_cds.py
+### bed_compute_gc.py
 
-Computes number of bases (A, C, G, T) and GC-content for regions in BED file. Requires `python 3` and `pysam` library. Type `python gencode_cds.py --help` to get the description of all parameters.
+Computes number of bases (A, C, G, T) and GC-content for regions in BED file. Requires `python 3` and `pysam` library. Type `python bed_compute_gc.py --help` to get the description of all parameters.
