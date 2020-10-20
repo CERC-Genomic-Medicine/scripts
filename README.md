@@ -42,4 +42,4 @@ Computes number of bases (A, C, G, T) and GC-content for regions in BED file. Re
 
 ### mendelian_per_trio.py
 
-For each variant within trio (mother, father, offspring) identifies possible Mendelian error. Requires `python 3` and `pysam` library. Trios (or nuclear families) must be provided in PED file format (no header). Genotypes for all samples from trios (or nuclear families) must be in the VCF/BCF files split by chromosome.  Type `mendelian_per_trio.py --help` to get the description of all parameters.
+For each variant within trio (mother, father, offspring) identifies possible Mendelian error. Requires `python 3` and `pysam` library. Trios (or nuclear families) must be provided in PED file format (no header). Genotypes for all samples from trios (or nuclear families) must be in the same VCF/BCF file (multiple VCFs/BCFs split by chromosome are allowed).  Type `mendelian_per_trio.py --help` to get the description of all parameters.
