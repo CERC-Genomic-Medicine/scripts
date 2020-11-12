@@ -46,4 +46,4 @@ For each variant within trio (mother, father, offspring) identifies possible Men
 
 ### mendelian_per_trio_split.py
 
-Same as **mendelian_per_trio.py**, but requires three sigle-sample inputVCF/BCF files: for father, for mother, and for child. Type `mendelian_per_trio_split.py --help` to get the description of all parameters.
+Same as **mendelian_per_trio.py**, but requires three sigle-sample input VCF/BCF files: for father, for mother, and for child. Type `mendelian_per_trio_split.py --help` to get the description of all parameters.
