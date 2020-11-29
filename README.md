@@ -47,3 +47,7 @@ For each variant within trio (mother, father, offspring) identifies possible Men
 ### mendelian_per_trio_split.py
 
 Same as **mendelian_per_trio.py**, but requires three sigle-sample input VCF/BCF files: for father, for mother, and for child. Type `mendelian_per_trio_split.py --help` to get the description of all parameters.
+
+### vcf_gene_set.py
+Create gene sets file from the VEP annotated VCF/BCF for gene-burden association tests (e.g. using SAIGE or EPACTS). Requires `python 3` and `pysam` library. Type `vcf_gene_set.py --help` to get the description of all parameters.
+
