@@ -55,6 +55,9 @@ if __name__ == '__main__':
 
             # iterate over all alternate alleles (i.e. in case variants is multi-allelic)
             for i, alt_allele in enumerate(record_in.alts, 1):
+                if not 'AC' in record_in.info:
+                    print(f'Warning: variant {record_in.chrom}:{record_in.pos}_{record_in.ref}/{alt_allele} does\'t have AC INFO field.')
+                    continue
                 ac = record_in.info['AC'][i - 1]
                 if ac > args.max_ac:
                     continue
