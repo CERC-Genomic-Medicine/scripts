@@ -11,7 +11,8 @@ import pysam
 
 argparser = argparse.ArgumentParser(description = 'Constructs gene sets from VCF/BCF annotated with VEP+LoFtee for gene burden association tests.')
 argparser.add_argument('-i', '--in-vcf', metavar = 'file', dest = 'in_VCF', required = True, help = 'VEP+LoFtee annotated input VCF/BCF file.')
-argparser.add_argument('-c', '--max-ac', metavar = 'number', dest = 'max_ac', required = True, type = int, help = 'Maximal alternate allele count (AC).')
+argparser.add_argument('-c', '--max-ac', metavar = 'number', dest = 'max_ac', required = False, type = int, help = 'Maximal alternate allele count (AC).')
+argparser.add_argument('-f', '--max-af', metavar = 'number', dest = 'max_af', required = False, type = float, help = 'Maximal alternate allele frequency (AF).')
 argparser.add_argument('-l', '--lof-only', dest = 'lof_only', action = 'store_true', help = 'Include only LoF variants.')
 argparser.add_argument('-o', '--out', metavar = 'file', dest= 'out_filename', required = True, help = 'Output tab-delimited file.')
 
@@ -31,8 +32,16 @@ cds_variant_types = [
 ]
 
 if __name__ == '__main__':
-    args = argparser.parse_args() 
+    args = argparser.parse_args()
     with pysam.VariantFile(args.in_VCF, 'r') as vcf_in:
+        if args.max_ac is not None:
+            if not 'AC' in vcf_in.header.info:
+                raise Exception('No meta-information entry about AC INFO field found!')
+
+        if args.max_af is not None:
+            if not 'AF' in vcf_in.header.info:
+                raise Exception('No meta-information entry about AF INFO field found!')
+
         # check if CSQ INFO field is present
         csq_meta = vcf_in.header.info.get('CSQ', None)
         if csq_meta is None:
@@ -55,12 +64,20 @@ if __name__ == '__main__':
 
             # iterate over all alternate alleles (i.e. in case variants is multi-allelic)
             for i, alt_allele in enumerate(record_in.alts, 1):
-                if not 'AC' in record_in.info:
-                    print(f'Warning: variant {record_in.chrom}:{record_in.pos}_{record_in.ref}/{alt_allele} does\'t have AC INFO field.')
-                    continue
-                ac = record_in.info['AC'][i - 1]
-                if ac > args.max_ac:
-                    continue
+                if args.max_ac is not None:
+                    if not 'AC' in record_in.info:
+                        print(f'Warning: variant {record_in.chrom}:{record_in.pos}_{record_in.ref}/{alt_allele} does\'t have AC INFO field.')
+                        continue
+                    ac = record_in.info['AC'][i - 1]
+                    if ac > args.max_ac:
+                        continue
+                if args.max_af is not None:
+                    if not 'AF' in record_in.info:
+                        print(f'Warning: variant {record_in.chrom}:{record_in.pos}_{record_in.ref}/{alt_allele} does\'t have AF INFO field.')
+                        continue
+                    af = record_in.info['AF'][i - 1]
+                    if af > args.max_af:
+                        continue
                 allele_annotations = annotations[i]
                 # iterate over all affected transcripts
                 for transcript in allele_annotations:
