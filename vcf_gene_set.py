@@ -13,7 +13,9 @@ argparser = argparse.ArgumentParser(description = 'Constructs gene sets from VCF
 argparser.add_argument('-i', '--in-vcf', metavar = 'file', dest = 'in_VCF', required = True, help = 'VEP+LoFtee annotated input VCF/BCF file.')
 argparser.add_argument('-c', '--max-ac', metavar = 'number', dest = 'max_ac', required = False, type = int, help = 'Maximal alternate allele count (AC).')
 argparser.add_argument('-f', '--max-af', metavar = 'number', dest = 'max_af', required = False, type = float, help = 'Maximal alternate allele frequency (AF).')
-argparser.add_argument('-l', '--lof-only', dest = 'lof_only', action = 'store_true', help = 'Include only LoF variants.')
+argparser.add_argument('-l', '--lof', dest = 'lof', action = 'store_true', help = 'Include LoF variants. By default includes all variants.')
+argparser.add_argument('-n', '--non-syn', dest = 'nonsyn', action = 'store_true', help = 'Include non-synonymous variants. By default includes all variants.')
+argparser.add_argument('-s', '--splice', dest = 'splice', action = 'store_true', help = 'Include splice variants. By default includes all variants.')
 argparser.add_argument('-o', '--out', metavar = 'file', dest= 'out_filename', required = True, help = 'Output tab-delimited file.')
 
 cds_variant_types = [
@@ -30,6 +32,20 @@ cds_variant_types = [
     'splice_donor_variant',
     'splice_acceptor_variant'
 ]
+
+non_synonymous_variant_types = [
+    'start_lost',
+    'missense_variant',
+    'stop_gained',
+    'stop_lost',
+    'frameshift_variant'
+]
+
+splice_variant_types = [
+    'splice_donor_variant',
+    'splice_acceptor_variant'
+]
+
 
 if __name__ == '__main__':
     args = argparser.parse_args()
@@ -88,8 +104,19 @@ if __name__ == '__main__':
                     consequences = transcript['Consequence'].split('&')
                     if not any(c in cds_variant_types for c in consequences):
                         continue
-                    is_lof = transcript['LoF'] == 'HC'
-                    if args.lof_only and not is_lof:
+                    include = True
+                    if args.lof or args.nonsyn or args.splice:
+                        include = False
+                        is_lof = transcript['LoF'] == 'HC'
+                        is_nonsyn = any(c in non_synonymous_variant_types for c in consequences)
+                        is_splice = any(c in splice_variant_types for c in consequences)
+                        if args.lof and is_lof:
+                            include |= True
+                        if args.nonsyn and is_nonsyn:
+                            include |= True
+                        if args.splice and is_splice:
+                            include |= True
+                    if not include:
                         continue
                     variant_name = f'{record_in.chrom}:{record_in.pos}_{record_in.ref}/{alt_allele}'
                     gene_name = transcript['Gene']
