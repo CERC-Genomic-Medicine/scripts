@@ -14,15 +14,16 @@ argparser = argparse.ArgumentParser(description = 'Comparison of 2 VCFs')
 argparser.add_argument('-R', '--Ref-vcf', metavar = 'file', dest = 'Rvcf', required = True, help = 'Reference Variant File, Origin VCFs')
 argparser.add_argument('-T', '--Test-vcf', metavar = 'file', dest = 'Cvcf', required = True, help = 'File to compare')
 
+#to test if samples are equivalent
 def test_samples(R_VCF,C_VCF):
 	if set(R_VCF.header.samples) == set(C_VCF.header.samples):
 		print("OK .................... Sample are Equivalent")
 		return set(C_VCF.header.formats.keys()).intersection(R_VCF.header.formats.keys())
 	elif '_' in R_VCF.header.samples[1] and '_' not in C_VCF.header.samples[1]:
-		warnings.warn('Delimiter might cause problem')
+		warnings.warn('Delimiter might cause problem') # if simply a case of plink's double-id no problem should arise
 		return True
 	elif '_' in C_VCF.header.samples[1] and '_' not in R_VCF.header.samples[1]:
-		warnings.warn("Delimiter might cause problem")
+		warnings.warn("Delimiter might cause problem") # if simply a case of plink's double-id no problem should arise
 		return True
 	else :
 		print('failed ........... Samples are not Equivalent')
@@ -39,13 +40,13 @@ def test_format(record_C,record_R):
 def test_Vequal(C_VCF,R_VCF):
 	for rec_C in C_VCF.fetch():
 		equality=False
-    REF=R_VCF.fetch("chr" + rec_C.contig,rec_C.pos-1,rec_C.pos)       
+    		REF=R_VCF.fetch("chr" + rec_C.contig,rec_C.pos-1,rec_C.pos)       
 		for rec_REF in REF:
 			if rec_REF.alts == rec_C.alts and rec_REF.ref ==rec_C.ref :
 				equality = equality or test_values_Vequal(rec_C,rec_REF)
 			if equality:
 				break
-		if not equality:
+		if not equality: ##Cases where no record in Reference, Cases where values are unequal, Cases where no format are overlapping
 			print("problem Position ", rec_C.pos)
 			break
 	print("Test Terminated")		
