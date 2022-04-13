@@ -14,15 +14,21 @@ argparser.add_argument('-R', '--Ref-vcf', metavar = 'file', dest = 'Rvcf', requi
 argparser.add_argument('-T', '--Test-vcf', metavar = 'file', dest = 'Cvcf', required = True, help = 'File to compare')
 
 def test_samples(R_VCF,C_VCF):
-	if list(R_VCF.header.samples) == list(C_VCF.header.samples):
+	if set(R_VCF.header.samples) == set(C_VCF.header.samples):
 		print("OK .................... Sample are Equivalent")
 		return list(C_VCF.header.samples)
 	elif '_' in R_VCF.header.samples[1] and '_' not in C_VCF.header.samples[1]:
 		warnings.warn('Delimiter might cause problem')
-		return False
+		if [i +'_'+ i for i, i,i in zip(list(R_VCF.header.samples),list(R_VCF.header.samples))]==list(C_VCF.header.samples):
+			return range(len(list(R_VCF.header.samples)))
+		else: 
+			return False
 	elif '_' in C_VCF.header.samples[1] and '_' not in R_VCF.header.samples[1]:
 		warnings.warn("Delimiter might cause problem")
-		return False
+		if [i +'_'+ j for i,j in zip(list(C_VCF.header.samples),list(C_VCF.header.samples))]==list(R_VCF.header.samples):
+			return range(len(list(R_VCF.header.samples)))
+		else:
+			return False
 	else :
 		print('failed ........... Samples are not Equivalent')
 		return False
@@ -49,13 +55,13 @@ def test_values_Vequal(record_C,record_R):
 
 
 def test_Vequal(C_VCF,R_VCF):
-###	timer=-1 #tracking information
-###	counter=0
+#	timer=-1
+#	counter=0
 	REF=R_VCF.fetch()
 	current=next(REF)
 	for rec_C in C_VCF.fetch():
 		equality=False
-		while(current.pos<=rec_C.pos): # if Reference position is supperior to target we assume it is absent or files are not in order
+		while(current.pos<=rec_C.pos):
 			if current.alts == rec_C.alts and current.ref==rec_C.ref and current.pos==rec_C.pos:
 				test=test_values_Vequal(rec_C,current)
 				if test==True :
@@ -65,14 +71,14 @@ def test_Vequal(C_VCF,R_VCF):
 					break      
 			else:
 				current=next(REF)
-		if not equality and current.pos<=rec_C.pos: #broken out of loop without surpassing the target position
+		if not equality and current.pos<=rec_C.pos:
 			print("problem Position ", rec_C.pos, current.pos,"at the", test[0],"samples, in the format", test[1])
 			print("Values are",rec_C.samples[test[0]][test[1]], ' (target) and ', current.samples[test[0]][test[1]], "(Reference)")
 			break
-		elif not equality and current.pos>rec_C.pos: 
+		elif not equality and current.pos>rec_C.pos:
 			print("problem Position ", rec_C.pos, "is absent in the Reference VCFs")
 			break
-##		if datetime.now().second!=timer: ##tracking information
+#		if datetime.now().second!=timer:
 #			timer=datetime.now().second
 #			print('current position :', rec_C.pos, " processed per second: ", counter, end = "\r")
 #			counter=0
@@ -90,3 +96,5 @@ if __name__ == "__main__":
 	Samples=test_samples(C,R)
 	if Samples:
 		test_Vequal(C,R)
+
+
