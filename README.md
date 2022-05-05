@@ -52,5 +52,7 @@ Same as **mendelian_per_trio.py**, but requires three sigle-sample input VCF/BCF
 Create gene sets file from the VEP annotated VCF/BCF for gene-burden association tests (e.g. using SAIGE or EPACTS). Requires `python 3` and `pysam` library. Type `vcf_gene_set.py --help` to get the description of all parameters.
 
 ### variants_per_individual.py
-Counts number of variants per individual from VCF/BCF file. Variants are grouped by most severe consequence based on VEP annotations. Requires `python 3` and `pysam` library. Tyoe `variants_per_individual.py --help` to get the description of all parameters.
+Counts number of variants per individual from VCF/BCF file. Variants are grouped by most severe consequence based on VEP annotations. Requires `python 3` and `pysam` library. Type `variants_per_individual.py --help` to get the description of all parameters.
 
+### plink2reference.py
+Helps to align A1/A2 alleles in PLINK to the human genome reference. Keeps only SNPs with A,C,G, and T alleles. Removes palindromic, A/T and G/C, SNPs. Type `plink2reference.py --help` to get the description of all parameters.
