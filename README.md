@@ -56,3 +56,6 @@ Counts number of variants per individual from VCF/BCF file. Variants are grouped
 
 ### plink2reference.py
 Helps to align A1/A2 alleles in PLINK to the human genome reference. Keeps only SNPs with A,C,G, and T alleles. Removes palindromic, A/T and G/C, SNPs. Flips everything on the `+` strand. Type `plink2reference.py --help` to get the description of all parameters.
+
+### plink_dupvar_prioritize.py
+Helps to remove duplicated variants with the highest missigness from PLINK files. Type `plink_dupvar_prioritize.py --help` to get the description of all parameters.
