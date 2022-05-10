@@ -61,5 +61,5 @@ Helps to align A1/A2 alleles in PLINK to the human genome reference. Keeps only 
 Helps to remove duplicated variants with the highest missigness from PLINK files. Type `plink_dupvar_prioritize.py --help` to get the description of all parameters.
 
 ### plink_freq_concordance.py
-Compares genotype (allele) frequency between two PLINK files using Fisher's exact test. Type `plink_freq_concordance.py --help` to get the description of all parameters.
+Compares genotype (allele) frequency between two PLINK files using Fisher's exact test. Type `plink_freq_concordance.py --help` to get the description of all parameters. You may need to load R (use `module spider r` and `module load r`) before running the script.
 
