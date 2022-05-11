@@ -16,7 +16,7 @@ AUTOSOMALS = set(map(lambda x: f'chr{x}', range(1, 23)))
 CHR_X = 'chrX'
 CHR_Y = 'chrY'
 PAR_XY = 'chrXY'
-
+CHR_MT = 'chrMT'
 
 stats = importr('stats')
 rstats_fisher = robjects.r['fisher.test']
@@ -28,6 +28,7 @@ def load_freq(filename):
     print(f'\tAutosomal SNPs: {len(df[df.CHR.isin(AUTOSOMALS)]):,}')
     print(f'\tAll X SNPs: {len(df[df.CHR == CHR_X]):,}')
     print(f'\tAll Y SNPs: {len(df[df.CHR == CHR_Y]):,}')
+    print(f'\tAll MT SNPs: {len(df[df.CHR == CHR_MT]):,}')
     print(f'\tPAR X/Y SNPs: {len(df[df.CHR == PAR_XY]):,}\n')
     return df
 
@@ -38,6 +39,7 @@ def merge_freq(df1, df2):
     print(f'\tAutosomal SNPs: {len(df[df.CHR.isin(AUTOSOMALS)]):,}')
     print(f'\tAll X SNPs: {len(df[df.CHR == CHR_X]):,}')
     print(f'\tAll Y SNPs: {len(df[df.CHR == CHR_Y]):,}')
+    print(f'\tAll MT SNPs: {len(df[df.CHR == CHR_MT]):,}')
     print(f'\tPAR X/Y SNPs: {len(df[df.CHR == PAR_XY]):,}\n')
     return df
 
@@ -55,7 +57,7 @@ def get_freq_haploid(hom_counts):
 
 
 def test_diploid(df):
-    for index, row in df[df.CHR.isin(AUTOSOMALS) | (df.CHR == CHR_X) | (df.CHR == PAR_XY)].iterrows():
+    for index, row in df[df.CHR.isin(AUTOSOMALS) | (df.CHR == CHR_X) | (df.CHR == CHR_MT) | (df.CHR == PAR_XY)].iterrows():
         table2x3 = [row['C(HOM A1)_1'], row['C(HET)_1'], row['C(HOM A2)_1']]
         if row.A1_1 == row.A1_2:
             table2x3 += [row['C(HOM A1)_2'], row['C(HET)_2'], row['C(HOM A2)_2']]
