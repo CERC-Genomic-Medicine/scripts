@@ -44,12 +44,16 @@ def merge_freq(df1, df2):
 
 def get_freq_diploid(hethom_counts):
     n = sum(hethom_counts) * 2
+    if n == 0:
+        return 0.0
     freq = (hethom_counts[0] * 2 + hethom_counts[1]) / n
     return freq
 
 
 def get_freq_haploid(hom_counts):
     n = sum(hom_counts)
+    if n == 0:
+        return 0.0
     freq = hom_counts[0] / n
     return freq
 
