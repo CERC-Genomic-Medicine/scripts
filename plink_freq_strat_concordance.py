@@ -99,8 +99,14 @@ def test_haploid(df):
 def meta_analysis(df):
     for name, group in df.groupby('SNP'):
         k = len(group)
-        freq1 = sum(group.N_ALT1) / sum(group.N1)
-        freq2 = sum(group.N_ALT2) / sum(group.N2)
+        if sum(group.N1) !=0 :
+            freq1 = sum(group.N_ALT1) / sum(group.N1)
+        else :
+            freq1 = 0.0
+        if sum(group.N2) !=0 :
+            freq2 = sum(group.N_ALT2) / sum(group.N2)
+        else :
+            freq2 = 0.0
 
         # Fisher's meta-analysis
         sumlog = sum(group['PVALUE'].apply(lambda x: -2 * math.log10(x))) 
