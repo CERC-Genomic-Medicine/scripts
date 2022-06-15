@@ -69,4 +69,6 @@ Similar to `plink_freq_concordance.py`, but allows stratification by the groups 
 ### merge_minimac_dosages.py
 Merges imputed dosages when the genotype imputation was performed in subsets of samples. Subsets can have shared samples. Type `merge_minimac_dosages.py --help` to get the description of all parameters.
 
+### plink_freq_vs_topmed.py
+Compares allele frequencies in PLINK file to TOPMed reference panel. Type `plink_freq_vs_topmed.py --help` to get the description of all parameters, and look inside the script for the additional hints.
 
