@@ -76,7 +76,6 @@ if __name__ == '__main__':
 
    df = pd.read_csv(args.in_freq, header = 0, sep = '\s+', low_memory = False, dtype = {'CHR': str})
    df['AF'] = 1.0 - df['MAF']
-   df = df[df['CHR'].isin({'1'})]
 
    df['TOPMED_AF'] = df['SNP'].apply(lambda x: get_topmed_freq(args.in_topmed, x))
    df = df[~df.TOPMED_AF.isnull()]
