@@ -1,13 +1,20 @@
 import argparse
 import pysam
 import numpy as np
+import scipy
 import statsmodels.api as sm
 
-argparser = argparse.ArgumentParser(description = 'Test for the significant differences in alternate allele frequencies between samples adjusting for PCs.')
-argparser.add_argument('-v', '--vcf', metavar = 'file', dest = 'in_vcf', type = str, required = True, help = 'VCF with genotypes.')
-argparser.add_argument('-l', '--labels', metavar = 'name', dest = 'in_labels', type = str, required = True, help = 'Tab-delimited text file with sample labels. Two columns (no header): <sample id>, <label name>.')
+
+argparser = argparse.ArgumentParser(description = 
+ 'This script tests whether the alternate allele frequencies are significantly different between multiple datasets (e.g. datasets produced using different genotyping arrays) while accounting for the difference in genetic ancestry. ' +\
+ 'Precisely, the script fits two linear regression models G ~ PC_1 + ... + PC_k + dataset_1 + ... + dataset_n and G ~ PC_1 + ... + PC_k, where G = {0, 1, 2} - are individual genotypes, PC_i - principal components, dataset_j - dataset indicator variable. ' +\
+ 'The script computes F-test P-value and Likelihood Ratio Test P-value comparing the two models. With the assumption of random sampling, the dataset_i variables should not provide significant improvements compared to the nested model.'
+ )
+
+argparser.add_argument('-v', '--vcf', metavar = 'file', dest = 'in_vcf', type = str, required = True, help = 'VCF with genotypes. All datasets (e.g. genotyping arrays) must be merged into one VCF. VCF may be split by chromosome.')
+argparser.add_argument('-l', '--labels', metavar = 'name', dest = 'in_labels', type = str, required = True, help = 'Tab-delimited text file with sample labels. Each label corresponds to a different dataset (e.g. different genotyping array). Two columns (no header): <sample id>, <label name>.')
 argparser.add_argument('-r', '--region', metavar = 'chr:start-stop', dest = 'in_region', type = str, required = True, help = '1-based region coordinates in the format: CHROM:START-STOP. If entire chromosome is needed, then specify just the chromosome name.')
-argparser.add_argument('-p', '--pca', metavar = 'file', dest = 'in_pca', type = str, required = True, help = 'PCA file.')
+argparser.add_argument('-p', '--pca', metavar = 'file', dest = 'in_pca', type = str, required = True, help = 'PCA file. Header: FID, IID, PC1, PC2, PC3, ..., PC[K]. We recommend using PCs from the projection to the reference panel\'s (e.g. 1000 Genomes Project) PCA space.')
 argparser.add_argument('-k', '--k-pcs', metavar = 'number', dest = 'k_pcs', type = int, required = True, help = 'Number of PCs to use. E.g. 4')
 argparser.add_argument('-o', '--output', metavar = 'file', dest = 'out_filename', type = str, required = True, help = 'Output filename.')
 
@@ -28,6 +35,7 @@ def load_pca(filename, k_pcs):
 def test_variant(sample2gt, sample2pca, sample2label, k_pcs):
    result = {
       'AF_MODEL': None,
+      'LRT_PVALUE': None,
       'FTEST_PVALUE': None
    }
 
@@ -37,6 +45,7 @@ def test_variant(sample2gt, sample2pca, sample2label, k_pcs):
 
    y = []
    x = []
+   x_null = []
 
    for sample_name, sample_gt in sample2gt.items():
       if sample_name not in sample2pca or sample_name not in sample2label:
@@ -50,31 +59,49 @@ def test_variant(sample2gt, sample2pca, sample2label, k_pcs):
       if label_code > 0:
          dummy_coding[label_code - 1] = 1
       x.append(pcs + dummy_coding)
-    
+      x_null.append(pcs)
+
    af = [ a / b for a, b in zip(an, n) ]
    for i in range(0, n_labels):
       result[f'AF_{i}'] = af[i]
       result[f'N_{i}'] = n[i] / 2
 
-   if all(a == 0 for a in af): 
-      return result 
+   if sum(an) <= 1: # skip monomorphic and singletons
+      return result
 
    x = sm.add_constant(x)
-   model = sm.OLS(y, x)
+   x_null = sm.add_constant(x_null)
+
+   model = sm.GLM(y, x, family=sm.families.Gaussian())
+   model_null = sm.GLM(y, x_null, family=sm.families.Gaussian())
+   
    results = model.fit()
+   results_null = model_null.fit()
+   
    #print(results.summary())
-   #print(results.params)
+   #print(results_null.summary())
+
+   # AIC, BIC, R2
+   # print(f'AIC {results.aic}')
+   # print(f'BIC {results.bic_llf}')
+   # print(f'R2 {1 - results.deviance / results.null_deviance}')
 
    h1 = ' = '.join( [f'x{i}' for i in range(k_pcs + 1, k_pcs + n_labels)] + ['0']  )
-
-   #print(h1)
-   #f_test = results.f_test(f"x{k_pcs + 1} = 0")
    f_test = results.f_test(h1)
 
-   #print(variant_name, f_test.pvalue)
-   result['FTEST_PVALUE'] =  f_test.pvalue
-   result['AF_MODEL'] = results.params[0] / 2
+   # print(f'Hypothesis: {h1}')
+   # print(f'F-test: {f_test}')
+
+   lrt = -2 * (results_null.llf - results.llf)
+   lrt_pvalue = scipy.stats.chi2.sf(lrt, n_labels - 1) 
+   # print(f'Likelihood ratio test (ratio, P-value): {lrt}, {lrt_pvalue}')  
    
+   af_model = results.params[0] / 2
+
+   result['LRT_PVALUE'] =  lrt_pvalue
+   result['FTEST_PVALUE'] =  f_test.pvalue
+   result['AF_MODEL'] = af_model
+
    return result
    
 
@@ -128,11 +155,10 @@ if __name__ == '__main__':
    for i in range(0, len(code2label)):
       header.append(f'AF_{code2label[i]}')
       header.append(f'N_{code2label[i]}')
-   header += ['AF_MODEL', 'FTEST_PVALUE']
+   header += ['AF_MODEL', 'LRT_PVALUE', 'FTEST_PVALUE']
 
    with open(args.out_filename, 'wt', buffering=1) as ofile, pysam.VariantFile(args.in_vcf, 'r') as ivcf:
       ofile.write('{}\n'.format('\t'.join(header)))
-      #for record in vcf.fetch(self.CHROM, self.START_BP, self.STOP_BP):
       for record in ivcf.fetch(region = args.in_region):
          if len(record.alts) > 1:
             continue
@@ -142,11 +168,9 @@ if __name__ == '__main__':
             if None in sample_frmt['GT']:
                continue
             sample2gt[sample] = sum(sample_frmt['GT'])
-    
          r = test_variant(sample2gt, sample2pca, sample2label, args.k_pcs)
          ofile.write(f'{variant_name}\t')
          for i in range(0, len(code2label)):
             ofile.write('{}\t{:.0f}\t'.format(r[f'AF_{i}'], r[f'N_{i}']))
-         ofile.write(f'{r["AF_MODEL"]}\t{r["FTEST_PVALUE"]}\n')
-
+         ofile.write(f'{r["AF_MODEL"]}\t{r["LRT_PVALUE"]}\t{r["FTEST_PVALUE"]}\n')
    print('Done.')
