@@ -65,8 +65,8 @@ def test_variant(sample2gt, sample2pca, sample2label, k_pcs):
    for i in range(0, n_labels):
       result[f'AF_{i}'] = af[i]
       result[f'N_{i}'] = n[i] / 2
-
-   if sum(an) <= 1: # skip monomorphic and singletons
+   
+   if sum(an) <= 1 or len(set(af)) == 1: # skip monomorphic and singletons
       return result
 
    x = sm.add_constant(x)
