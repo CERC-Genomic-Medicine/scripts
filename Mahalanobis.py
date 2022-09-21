@@ -48,7 +48,6 @@ if __name__ == '__main__':
 		threshold=args.thresh
 	else : 
 		threshold=0.001 
-	print(threshold)
     	Eth_list=[list(pvalues.loc[i][pvalues.loc[i]>threshold].index) for i in pvalues.index]
 	Eth_list=[['None'] if not i else i for i in Eth_list]
 	res['Ethnicity']=[','.join(q).replace('_Pval', '') for q in Eth_list]
