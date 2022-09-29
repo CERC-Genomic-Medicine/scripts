@@ -66,6 +66,9 @@ Compares genotype (allele) frequency between two PLINK files using Fisher's exac
 ### plink_freq_strat_concordance.py
 Similar to `plink_freq_concordance.py`, but allows stratification by the groups (e.g. ancestry). Type `plink_freq_strat_concordance.py --help` to get the description of all parameters. You may need to load R (use `module spider r` and `module load r`) before running the script.
 
+### Mahalanobis.py
+Performs a Mahalanobis distance of projected genomes. Type `Mahalanobis.py --help` to get the description of all parameters. Produces for each study sample: distance and its derived p-value per reference categories, and a list of non-rejected reference categories (at input threshold).
+
 ### merge_minimac_dosages.py
 Merges imputed dosages when the genotype imputation was performed in subsets of samples. Subsets can have shared samples. Type `merge_minimac_dosages.py --help` to get the description of all parameters.
 
