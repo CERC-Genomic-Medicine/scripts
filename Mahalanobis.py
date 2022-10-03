@@ -17,7 +17,7 @@ argparser.add_argument('-O', '--Out', metavar = 'str', dest = 'Out', required = 
 # o) index correspond to one Study individuals in -S argument
 # o) Per ancestry : Ancestry_Maha -> Distance from ancestry ||  distribution Ancestry_Pval -> Outlier p-value
 
-Maha(pca_ref,pca_study):
+def Maha(pca_ref,pca_study):
 	mean_ref = pca_ref.mean()
 	pca_study_minus_mean = pca_study - mean_ref # Distance verctor from the mean
 	cov_ref = np.cov(pca_ref.values.T) # covariance matrix
