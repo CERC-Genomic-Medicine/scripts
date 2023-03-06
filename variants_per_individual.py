@@ -22,6 +22,9 @@ CONSEQUENCES = [
     'missense_variant',
     'protein_altering_variant',
     'splice_region_variant',
+    'splice_donor_5th_base_variant',
+    'splice_donor_region_variant',
+    'splice_polypyrimidine_tract_variant',
     'incomplete_terminal_codon_variant',
     'stop_retained_variant',
     'start_retained_variant',
@@ -107,10 +110,11 @@ def read_gt_vcf(in_gt_vcf, in_csq_vcf, out_file):
             alt_carriers = dict((i, Counter()) for i, alt in enumerate(record.alts, 1)) # we assume that all variants are normalized such that ALT is never equal to '.'
             for individual, genotype in record.samples.iteritems():
                 for i in genotype.allele_indices:
+                    if i is None:
+                        continue
                     if i > 0:
                         alt_carriers[i].update((individual,))
             for alt_index, individuals in alt_carriers.items():
-                j += 1
                 ac = sum(individuals.values())
                 if ac == 0: # skip monomorphic
                     continue
