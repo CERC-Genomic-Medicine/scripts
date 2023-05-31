@@ -27,28 +27,28 @@ def Maha(pca_ref,pca_study):
 	MAHA = mahalanobis.diagonal()
 	## Calculate Oulier Probability
 	PVALUE = 1 - chi2.cdf(MAHA, args.pc-1)
-	df=pd.DataFrame(list(zip(MAHA, PVALUE)),columns=['Maha','Pval'],index=pca_study.index)
+	df = pd.DataFrame(list(zip(MAHA, PVALUE)), columns=['Maha','Pval'], index=pca_study.index)
 	return df
 
 if __name__ == '__main__':
 	args = argparser.parse_args()
 	#input only relevant Data
-	ref= pd.read_table(args.RefPC,header=0, sep='\s+',low_memory=False,usecols = ['indivID'] + [f'PC{i}' for i in range(1, args.pc+1)],index_col='indivID')
-	Eth= pd.read_table(args.Ethn,header=0, sep='\s+',low_memory=False,usecols = ['indivID', 'Ethnicity'],index_col='indivID')
-	study= pd.read_table(args.SPC,header=0, sep='\s+',low_memory=False,usecols = ['indivID'] + [f'PC{i}' for i in range(1, args.pc+1)],index_col='indivID')
-	res=pd.DataFrame(index=study.index)
+	ref = pd.read_table(args.RefPC, header=0, sep='\s+', low_memory=False, usecols=['indivID'] + [f'PC{i}' for i in range(1, args.pc+1)], index_col='indivID')
+	Eth = pd.read_table(args.Ethn, header=0, sep='\s+', low_memory=False, usecols=['indivID', 'Ethnicity'], index_col='indivID')
+	study = pd.read_table(args.SPC, header=0, sep='\s+', low_memory=False, usecols=['indivID'] + [f'PC{i}' for i in range(1, args.pc+1)], index_col='indivID')
+	res = pd.DataFrame(index=study.index)
 	#Calulate Mahalanobis for each ancestry seperatly
 	for i in Eth.Ethnicity.unique():
-		df=Maha(ref.loc[Eth[Eth.Ethnicity==i].index],study)
-		df.columns=[i+'_'+j for j in df.columns]
-		res=pd.concat([res,df],axis=1,copy=False)
+		df = Maha(ref.loc[Eth[Eth.Ethnicity==i].index], study)
+		df.columns = [i+'_'+j for j in df.columns]
+		res = pd.concat([res,df],axis=1, copy=False)
 	#Determine list of non rejected Ancestry
-	pvalues=res[[i for i in res.columns if 'Pval' in i]] 
+	pvalues = res[[i for i in res.columns if 'Pval' in i]] 
 	if args.thresh :
-		threshold=args.thresh
+		threshold = args.thresh
 	else : 
-		threshold=0.001 
-    	Eth_list=[list(pvalues.loc[i][pvalues.loc[i]>threshold].index) for i in pvalues.index]
-	Eth_list=[['None'] if not i else i for i in Eth_list]
-	res['Ethnicity']=[','.join(q).replace('_Pval', '') for q in Eth_list]
-	res.to_csv(args.Out, sep= '\t', index=True)
+		threshold = 0.001 
+    	Eth_list = [list(pvalues.loc[i][pvalues.loc[i] > threshold].index) for i in pvalues.index]
+	Eth_list = [['None'] if not i else i for i in Eth_list]
+	res['Ethnicity'] = [','.join(q).replace('_Pval', '') for q in Eth_list]
+	res.to_csv(args.Out, sep='\t', index=True)
