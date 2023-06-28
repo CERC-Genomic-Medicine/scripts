@@ -7,7 +7,7 @@ YEAR: 2022 ?
 
 Modified by Vincent Chapdelaine (2023)
 
--> introduction of outlier filters (sd and iq)
+-> introduction of outlier filters SD
 
 '''
 
@@ -17,6 +17,8 @@ import warnings
 import argparse
 import numpy as np
 import sys
+from collections import OrderedDict
+import math
 
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
@@ -26,9 +28,7 @@ argparser.add_argument('-c', '--catalog', metavar = 'name', dest = 'in_catalog_s
 argparser.add_argument('-p', '--phenotypes', metavar = 'name', dest = 'in_phenotypes', type = str, required = True, help = 'CSV file with phenotype values for each sample in the CARTaGENE study.')
 argparser.add_argument('-s', '--samples', metavar = 'name', dest = 'in_samples', type = str, required = True, help = 'List of individual IDs to consider (e.g. PLINK\'s *.psam file). The individual IDs must be in the column named "IID".')
 argparser.add_argument('-o', '--output', metavar = 'name', dest = 'out_prefix', type = str, required = True, help = 'Prefix for output files.') 
-argparser.add_argument('-t', '--fold_outlier_threshold', metavar = 'value', dest = 'outlier_value', type = float, required = '--sd' in sys.argv or '--iq' in sys.argv, help = 'Fold value of the given outlier detection threshold (default 1.5)') 
-argparser.add_argument('--sd', dest = 'sd', action='store_true', required = False, help = 'standard deviation outlier detection method, i.e. threshold value is x fold standard deviation above and below mean')
-argparser.add_argument('--iq', dest = 'iq', action='store_true', required = False, help = 'interquartile outlier detection method, i.e. threshold value is x fold interquartile range below and above  quartile 1 and quartile 3 respectively')
+argparser.add_argument('-t', '--outlier_threshold', metavar = 'value', dest = 'outlier_value', type = float, default=3, help = 'Standard deviation outlier detection threshold (number of standard deviation fold above and below mean ; default 3)') 
 
 catalog_sheet_categories = 'Categories'
 catalog_sheet_missing_codes = 'Linear data missing codes'
@@ -107,25 +107,32 @@ def filter_continuous_variables(df_variables, df_missing_codes, df_pheno, df_phe
       if df_all.empty:
          continue
 
-      if args.iq:
-         #interquartile method of filtering
-         Q1,Q3 = np.percentile(df_all.RECODED , [25,75])
-         IQR = Q3 - Q1
-         ul = Q3+args.outlier_value*IQR
-         ll = Q1-args.outlier_value*IQR
-         df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if (x > ul or x < ll) else x )
-         n_outliers=sum([i > ul or i < ll for i in df_all.RECODED])
+      #Standard deviation  method of filering
 
-      if args.sd:
-         #Standard deviation  method of filering
-         mean = df_all.RECODED.mean()
-         sd=np.std(df_all.RECODED)
-         ul = mean+args.outlier_value*sd
-         ll = mean-args.outlier_value*sd
-         df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if (x > ul or x < ll) else x )
-         n_outliers=sum([i > ul or i < ll for i in df_all.RECODED])
+      mean = df_all.RECODED.mean()
+      sd=np.std(df_all.RECODED)
+      ul = mean+args.outlier_value*sd
+      ll = mean-args.outlier_value*sd
+      df_pheno_cut['RECODED'] = df_pheno_cut[variable].apply(lambda x: None if (x > ul or x < ll) else x )
+      n_outliers=len(df_all.RECODED[(df_all.RECODED > ul) | (df_all.RECODED < ll)])
 
-      df_all = df_pheno_cut[~df_pheno_cut.RECODED.isna()]
+      #details the sd outliers potential filters
+      sd_details={}
+      for i in range(1,int(args.outlier_value)+1):
+         sd_details['N_VALUES_LEFT_'+str(i)+'SD'] = len(df_all.RECODED[df_all.RECODED < (mean-i*sd)])
+         sd_details['MAX_VALUES_LEFT_'+str(i)+'SD'] = mean-i*sd
+         sd_details['N_VALUES_RIGHT_'+str(i)+'SD'] = len(df_all.RECODED[df_all.RECODED > (mean-i*sd)])
+         sd_details['MAX_VALUES_RIGHT_'+str(i)+'SD'] = mean+i*sd
+
+      ## In case threshold is not round value
+      if args.outlier_value > int(args.outlier_value):
+         sd_details['N_VALUES_LEFT_'+str(args.outlier_value)+'SD'] = len(df_all.RECODED[df_all.RECODED < (mean-args.outlier_value*sd)])
+         sd_details['MAX_VALUES_LEFT_'+str(args.outlier_value)+'SD'] = ll
+         sd_details['N_VALUES_RIGHT_'+str(args.outlier_value)+'SD'] = len(df_all.RECODED[df_all.RECODED > (mean-args.outlier_value*sd)])
+         sd_details['MAX_VALUES_RIGHT_'+str(args.outlier_value)+'SD'] = ul
+      
+      df_all = df_pheno_cut[~df_pheno_cut.RECODED.isna()] # df_all without outliers (filter specified)
+      PERC_5,PERC95 = np.percentile(df_all.RECODED , [5,95])
       min_value = df_all.RECODED.min()
       max_value = df_all.RECODED.max()
       unique_values = len(df_all.RECODED.unique())
@@ -134,7 +141,7 @@ def filter_continuous_variables(df_variables, df_missing_codes, df_pheno, df_phe
          continue
       if unique_values <= 10:
          continue  
-  
+
       df_males = df_all[df_all.SEX_BIRTH == 0]
       df_females = df_all[df_all.SEX_BIRTH == 1]
       mean_value = df_all.RECODED.mean()
@@ -147,10 +154,7 @@ def filter_continuous_variables(df_variables, df_missing_codes, df_pheno, df_phe
       n_females = len(df_females)
 
       df_pheno_final[variable] = df_pheno_cut.RECODED
-      if args.sd or args.iq :
-         yield {'DOMAIN': row['database'], 'VARIABLE': variable, 'UNIT': unit, 'N': n_total, 'MALES': n_males, 'FEMALES': n_females, 'MIN_VALUE': min_value, 'MAX_VALUE': max_value, 'UNIQUE_VALUES': unique_values, 'MEAN_VALUE': mean_value, 'MEDIAN_VALUE': median_value, 'MODE_VALUE': mode_value, 'MODE_FREQ': mode_freq, 'outliers' : n_outliers}
-      else :
-         yield {'DOMAIN': row['database'], 'VARIABLE': variable, 'UNIT': unit, 'N': n_total, 'MALES': n_males, 'FEMALES': n_females, 'MIN_VALUE': min_value, 'MAX_VALUE': max_value, 'UNIQUE_VALUES': unique_values, 'MEAN_VALUE': mean_value, 'MEDIAN_VALUE': median_value, 'MODE_VALUE': mode_value, 'MODE_FREQ': mode_freq}
+      yield {**{'DOMAIN': row['database'], 'VARIABLE': variable, 'UNIT': unit, 'N': n_total, 'MALES': n_males, 'FEMALES': n_females, 'MIN_VALUE': min_value, 'MAX_VALUE': max_value, 'UNIQUE_VALUES': unique_values, 'MEAN_VALUE': mean_value, 'MEDIAN_VALUE': median_value, 'MODE_VALUE': mode_value, 'MODE_FREQ': mode_freq, 'n_outliers_'+str(args.outlier_value)+'SD' : n_outliers,'SD' : sd, 'PERC_5' : PERC_5, 'PERC_95' : PERC95},** sd_details}
 
 
 if __name__ == '__main__':
@@ -183,6 +187,6 @@ if __name__ == '__main__':
 
    df_pheno_final = pd.DataFrame({'FID': df_pheno.PROJECT_CODE, 'IID': df_pheno.PROJECT_CODE})
    df_variables_final = pd.DataFrame(filter_continuous_variables(df_variables, variable_missing_codes, df_pheno, df_pheno_final))
- 
+   
    df_pheno_final.to_csv(f'{args.out_prefix}.pheno', sep = '\t', header = True, index = False, na_rep = 'NA')
    df_variables_final.to_csv(f'{args.out_prefix}.summary.tsv', sep = '\t', header = True, index = False)
