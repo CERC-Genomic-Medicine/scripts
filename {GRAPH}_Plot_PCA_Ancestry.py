@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-/*
-* Author: Vincent Chapdelaine <vincent.chapdelaine@mail.mcgill.ca>
-* Version: 1.0
-* Year: 2024
-* Aim : Automated plot of PCA Projection
-*/
-"""
 
 import matplotlib.colors as mcolors
 import pandas as pd
@@ -56,7 +48,6 @@ def suite(n):
     summ=0
     for i in range(0,n):
         summ=summ+i
-        print(summ)
     return summ
 
 def is_prime(n):
@@ -94,20 +85,16 @@ if __name__ == '__main__':
   color_dict=Color_dict(NameDict)
   dic=dict(zip(Ancestry_Ref.index,Ancestry_Ref.iloc[:, 0]))
   grid=find_factorial_grid_approx_prime(suite(args.n))
-  print(grid)
   fig, axs = plt.subplots(grid[0], grid[1], figsize=(grid[0]*8+5,grid[0]*8), dpi = 100*args.n*2)
   i=0
   for x in range(1, args.n):
     for y in range(x+1, args.n+1):
-        print('A')
-        print(i//grid[1])
-        print(i%grid[1])
         plot_Projection(axs[i//grid[1],i%grid[1]],Projected,Ref_proj,x,y)
         i=i+1
 patches=[]
 for q in color_dict.keys() :
   patches.append(mpatches.Patch(color=color_dict[q], label=NameDict[q]))
-patches.append(mpatches.Patch(color='black', label=args.study_name + ' (of ' + NameDict[args.Seleted] +' predicted Ancestry)'))
+patches.append(mpatches.Patch(color='black', label=f"{args.study_name} of {NameDict[args.Seleted]} predicted Ancestry \n (Probability > {args.Threshold}, N = {len(Projected.index)})"))
 plt.legend(handles=patches,title= "Genetic Ancestry",loc='center left', bbox_to_anchor=(1.0, 0.5))
 fig.suptitle("Genetic ancestry projection", fontsize=16)
 fig.tight_layout()
