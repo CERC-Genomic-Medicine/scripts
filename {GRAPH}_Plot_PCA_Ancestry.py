@@ -23,7 +23,7 @@ parser.add_argument('--out', dest='output', default='output', type=str, help='ou
 plt.rcParams.update({'font.size': 12})
 
 def Name_dictionnary(Ancestries):
-  NameDict_default={'SAS': 'South Asian', 'EUR': 'European', 'EAS': 'East Asian', 'AMR': 'Ad Mixed American', 'AFR': 'African', 'MID' : 'Middle eastern', 'OCE' : 'Oceanian'}
+  NameDict_default={'CSA': 'Central South Asian','SAS': 'South Asian', 'EUR': 'European', 'EAS': 'East Asian', 'AMR': 'Ad Mixed American', 'AFR': 'African', 'MID' : 'Middle eastern', 'OCE' : 'Oceanian'}
   if Ancestries.issubset(set(NameDict_default.keys())) :
     return NameDict_default
   else :
