@@ -78,3 +78,9 @@ Produce sum of absolute differences of Dosages in overlap samples of two impute 
 ### plink_freq_vs_topmed.py
 Compares allele frequencies in PLINK file to TOPMed reference panel. Type `plink_freq_vs_topmed.py --help` to get the description of all parameters, and look inside the script for the additional hints.
 
+### {GRAPH}_Manhattan_Miami.py
+Plots a Miami or Manahttan plot (depending on options selected) form Regenie Output.
+
+### {GRAPH}_Plot_PCA_Ancestry.py
+Plots PCA Projections.
+
