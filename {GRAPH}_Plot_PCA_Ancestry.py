@@ -95,7 +95,7 @@ if __name__ == '__main__':
 patches=[]
 for q in color_dict.keys() :
   patches.append(mpatches.Patch(color=color_dict[q], label=NameDict[q]))
-patches.append(mpatches.Patch(color='black', label=f"{args.study_name} of {NameDict[args.Seleted]} predicted Ancestry \n (Probability > {args.Threshold}, N = {len(Projected.index)})"))
+patches.append(mpatches.Patch(color='black', label=f"{args.study_name} of {NameDict[args.Seleted]} predicted Ancestry \n (Probability ≥ {args.Threshold}, N = {len(Projected.index)})"))
 plt.legend(handles=patches,title= "Genetic Ancestry",loc='center left', bbox_to_anchor=(1.0, 0.5))
 fig.suptitle("Genetic ancestry projection", fontsize=16)
 fig.tight_layout()
