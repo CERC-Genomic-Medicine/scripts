@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+"""
+/*
+* Author: Vincent Chapdelaine <vincent.chapdelaine@mail.mcgill.ca>
+* Version: 1.0
+* Year: 2024
+* Aim : Automated plot of PCA Projection
+*/
+"""
 
 import matplotlib.colors as mcolors
 import pandas as pd
