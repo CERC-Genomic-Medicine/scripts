@@ -20,7 +20,7 @@ parser.add_argument('-n', '--PC', metavar = 'number',dest='n', type=int,required
 parser.add_argument('-l', '--label', metavar = 'string',dest='study_name', type=str,required = False, default='Study', help='label of the study')
 parser.add_argument('--out', dest='output', default='output', type=str, help='output')
 
-plt.rcParams.update({'font.size': 12})
+plt.rcParams.update({'font.size': 14})
 
 def Name_dictionnary(Ancestries):
   print(Ancestries)
@@ -86,7 +86,7 @@ if __name__ == '__main__':
   color_dict=Color_dict(NameDict)
   dic=dict(zip(Ancestry_Ref.index,Ancestry_Ref.iloc[:, 0]))
   grid=find_factorial_grid_approx_prime(suite(args.n))
-  fig, axs = plt.subplots(grid[0], grid[1], figsize=(grid[0]*8+5,grid[0]*8), dpi = 100*args.n*2)
+  fig, axs = plt.subplots(grid[0], grid[1], figsize=(grid[1]*8,grid[0]*8), dpi = 300)
   i=0
   for x in range(1, args.n):
     for y in range(x+1, args.n+1):
@@ -96,7 +96,7 @@ patches=[]
 for q in color_dict.keys() :
   patches.append(mpatches.Patch(color=color_dict[q], label=NameDict[q]))
 patches.append(mpatches.Patch(color='black', label=f"{args.study_name} of {NameDict[args.Seleted]} predicted Ancestry \n (Probability ≥ {args.Threshold}, N = {len(Projected.index)})"))
-plt.legend(handles=patches,title= "Genetic Ancestry",loc='center left', bbox_to_anchor=(1.0, 0.5))
-fig.suptitle("Genetic ancestry projection", fontsize=16)
+plt.legend(handles=patches,title= "Genetic Ancestry",loc='center left', bbox_to_anchor=(1.0, 0.5),fontsize="18")
+fig.suptitle("Genetic ancestry projection", fontsize=20)
 fig.tight_layout()
 plt.savefig(args.output + '.png')
