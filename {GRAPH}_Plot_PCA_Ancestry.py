@@ -10,12 +10,12 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Ancestry_projection')
 
-parser.add_argument('-P', '--Projected', metavar = 'File',dest='Proj',required = True, type=str, help='Projected samples position')
-parser.add_argument('-R','--Reference', metavar = 'File',dest='Ref',required = True, type=str, help='Reference samples position')
+parser.add_argument('-P', '--Projected', metavar = 'File',dest='Proj',required = True, type=str, help='Projected samples PCA position')
+parser.add_argument('-R','--Reference', metavar = 'File',dest='Ref',required = True, type=str, help='Reference samples PCA position')
 parser.add_argument('-S', '--Study' , metavar = 'File',dest='Study',required = True, type=str, help='Infered Ethnicity projected samples')
 parser.add_argument('-A', '--Ancestry', metavar = 'File',dest='Ancestry', type=str,required = True, help='Reference Samples ethnicity')
 parser.add_argument('-c', '--selected', metavar = 'str',dest='Seleted', type=str,required = True, help='Ethnicty to plot')
-parser.add_argument('-T', '--Threshold', metavar = 'number',dest='Threshold', type=float,required = True, help='Reference Samples ethnicity')
+parser.add_argument('-T', '--Threshold', metavar = 'number',dest='Threshold', type=float,required = True, help='Theshold probability of samples to plot')
 parser.add_argument('-n', '--PC', metavar = 'number',dest='n', type=int,required = True, help='number of PC to plot')
 parser.add_argument('-l', '--label', metavar = 'string',dest='study_name', type=str,required = False, default='Study', help='label of the study')
 parser.add_argument('--out', dest='output', default='output', type=str, help='output')
