@@ -10,12 +10,12 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Ancestry_projection')
 
-parser.add_argument('-P', '--Projected', metavar = 'File',dest='Proj',required = True, type=str, help='Projected samples PCA position')
-parser.add_argument('-R','--Reference', metavar = 'File',dest='Ref',required = True, type=str, help='Reference samples PCA position')
+parser.add_argument('-P', '--Projected', metavar = 'File',dest='Proj',required = True, type=str, help='Projected samples position')
+parser.add_argument('-R','--Reference', metavar = 'File',dest='Ref',required = True, type=str, help='Reference samples position')
 parser.add_argument('-S', '--Study' , metavar = 'File',dest='Study',required = True, type=str, help='Infered Ethnicity projected samples')
 parser.add_argument('-A', '--Ancestry', metavar = 'File',dest='Ancestry', type=str,required = True, help='Reference Samples ethnicity')
 parser.add_argument('-c', '--selected', metavar = 'str',dest='Seleted', type=str,required = True, help='Ethnicty to plot')
-parser.add_argument('-T', '--Threshold', metavar = 'number',dest='Threshold', type=float,required = True, help='Theshold probability of samples to plot')
+parser.add_argument('-T', '--Threshold', metavar = 'number',dest='Threshold', type=float,required = True, help='Reference Samples ethnicity')
 parser.add_argument('-n', '--PC', metavar = 'number',dest='n', type=int,required = True, help='number of PC to plot')
 parser.add_argument('-l', '--label', metavar = 'string',dest='study_name', type=str,required = False, default='Study', help='label of the study')
 parser.add_argument('--out', dest='output', default='output', type=str, help='output')
@@ -63,7 +63,7 @@ def is_prime(n):
 def find_factorial_grid_approx_prime(product):
     # If the product is a prime number greater than 3, approximate to the next value
     if is_prime(product) and product > 3:
-        product += 1  # Approximate to the next number
+        product += 1  # Approximate to the next number        
     
     a, b = 1, product
     
@@ -86,12 +86,26 @@ if __name__ == '__main__':
   color_dict=Color_dict(NameDict)
   dic=dict(zip(Ancestry_Ref.index,Ancestry_Ref.iloc[:, 0]))
   grid=find_factorial_grid_approx_prime(suite(args.n))
-  fig, axs = plt.subplots(grid[0], grid[1], figsize=(grid[1]*8,grid[0]*8), dpi = 300)
-  i=0
-  for x in range(1, args.n):
-    for y in range(x+1, args.n+1):
+  print(grid)
+  if grid[0] ==1 :
+    if grid[1] !=1:
+      fig, axs = plt.subplots(grid[0],grid[1], figsize=(grid[1]*8,grid[0]*8), dpi = 300)
+      i=0
+      for x in range(1, args.n):
+        for y in range(x+1, args.n+1):
+          plot_Projection(axs[i],Projected,Ref_proj,x,y)
+          i=i+1
+    else :
+      fig, axs = plt.subplots(grid[0],grid[1], figsize=(grid[1]*8,grid[0]*8), dpi = 300)
+      plot_Projection(axs,Projected,Ref_proj,1,2)
+  else:
+    fig, axs = plt.subplots(grid[0], grid[1], figsize=(grid[1]*8,grid[0]*8), dpi = 300)
+    i=0
+    for x in range(1, args.n):
+      for y in range(x+1, args.n+1):
         plot_Projection(axs[i//grid[1],i%grid[1]],Projected,Ref_proj,x,y)
         i=i+1
+
 patches=[]
 for q in color_dict.keys() :
   patches.append(mpatches.Patch(color=color_dict[q], label=NameDict[q]))
