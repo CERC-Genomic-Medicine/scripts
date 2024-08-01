@@ -84,3 +84,9 @@ Plots a Miami or Manahttan plot (depending on options selected) form Regenie Out
 ### {GRAPH}_Plot_PCA_Ancestry.py
 Plots PCA Projections.
 
+### BEscreen_lollipop_plot.py
+The main goal is to represent two results from Base Editing Crispr screening. (as pos/neg lolliplot separated by a diagram of the protein)
+This scripts also includes functions to :
+     - Create a representation of a protein or gene with feature/domains
+     - A methodologie to collapse intron (optional)
+     - Create a lolliplot
