@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
 
-import random
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-import matplotlib.lines as mlines
-from matplotlib.patches import Patch
-import matplotlib.colors as mcolors
-import argparse
 
 #
 # Author : Vincent Chapdelaine (vincent.chapdelaine@mcgill.ca)
@@ -23,14 +15,129 @@ import argparse
 #   python3 .py -b path/to/bedfile.bed -r path/to/crispr_screen.tsv --highlight_region Tetramerization_Domain -m Full --out Lolliplot -c 100
 #
 
+import random
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import matplotlib.lines as mlines
+from matplotlib.patches import Patch
+import matplotlib.patches as patches
+import matplotlib.colors as mcolors
+import argparse
+from scipy.stats import permutation_test
+from scipy.stats import wilcoxon
+from scipy.stats import rankdata
+from scipy.stats import binom_test
+
+
 parser = argparse.ArgumentParser(description='A plotting script for loolipop plot')
 parser.add_argument('-b', '--bed', metavar='FILE', dest='bed_file', required=True, type=str, help='space/tab-delimited bed file of features, must contains columns : start, stop and name')
-parser.add_argument('-r', '--result', metavar='FILE', dest='result_file', required=True, type=str, help='space/tab-delimited result file TBD')
+parser.add_argument('-t', '--target', metavar='FILE', dest='result_file', required=True, type=str, help='space/tab-delimited result file TBD')
+parser.add_argument('-v', '--vep', metavar='FILE', dest='vep_file', required=True, type=str, help='tab delimited variant effect prediction file (VEP)')
+parser.add_argument('-n', '--negative_controls', metavar='FILE', dest='negative_control_file', required=False, type=str, help='space/tab-delimited result file TBD')
 parser.add_argument('-c', '--intron_collapse', metavar='number', dest='collapse_factor', required=False,default=1 , type=int, help='factor by which to collapse introns (default uncollapsed), intron are defined by name containing "intron"')
-parser.add_argument('-m', '--legend_mode', metavar='str', dest='legend_mode', required=False,default='Mix' , type=str, help='legend mode (possible values Mix (default) or Full), full all features are in legend, mix of on-graph and on-legend')
+parser.add_argument('--stat_method',metavar='str', dest='stat_method', required=False,default='Rank' , choices={"binom_sign", "Rank",'sign_test'}, type=str, help='Statistical method to calculate p-value of Biological significance')
+parser.add_argument('--Bio_threshold', dest='Biological_threshold', metavar='float',type=float, required=False, default='0.05', help='Biological threshold (two-sided)')
+parser.add_argument('--scheme_location', metavar='str', dest='scheme_loc', required=False,default='middle' , type=str, choices={"top",'bottom', "middle"}, help='Location of the protein/gene scheme ("top"/"middle"/"bottom") (default : middle)')
+parser.add_argument('--histogram', dest='histogram', required=False,action='store_true', help='Flag for wheather a histogram should represent the coverage')
+parser.add_argument('-p', '--Prob_Threshold', metavar='float',type=float, dest='p_thresh', required=False, default='1', help='P-Value Threshold for loolipop representation')
+parser.add_argument('-B', '--Biological_Sig', dest='Biological_REP', action='store_true', help='Flag for Biological significance requirerement in lolipop plot')
+parser.add_argument('--no_stem', dest='no_stem', action='store_true', help='Flag to remove the stemlines')
+parser.add_argument('-m', '--legend_mode', metavar='str', dest='legend_mode', required=False,default='Mix' , choices={"Full", "Mix"}, type=str, help='legend mode (possible values Mix (default) or Full), full all features are in legend, mix of on-graph and on-legend')
 parser.add_argument('--highlight_region', metavar='str', dest='highlight', required=False,default=None , type=str, help='Feature to be highlighted')
 parser.add_argument('--out', dest='output', default='output', type=str, help='Prefix of output image file name (output.png).')
 
+# Constante
+
+#def wilcoxon_test(sample, hypothesized_median=0):
+#    # Calculate the differences from the hypothesized median
+#    differences = [x - hypothesized_median for x in sample]
+#    
+#    # Perform the Wilcoxon signed-rank test
+#    stat, p_value = wilcoxon(differences,alternative='two-sided')
+#    
+#    return p_value
+
+
+# Mapping for markers and colors based on Consequence
+consequence_mapping = {
+    'synonymous': ('g', 'D'),  # green, diamond
+    'missense': ('purple', 'o'),  # purple, circle
+    'non-sense': ('red', 's'),  # red, square
+    'splice': ('gold', '^')  # gold, triangle
+}
+variant_consequences_mapping = {
+'missense_variant': 'missense',
+'intron_variant': 'none',
+'downstream_gene_variant': 'none',
+'NMD_transcript_variant': 'nonsense',
+'upstream_gene_variant': 'none',
+'3_prime_UTR_variant': 'none',
+'synonymous_variant': 'synonymous',
+'non_coding_transcript_exon_variant': 'none',
+'splice_region_variant': 'splice',
+'splice_polypyrimidine_tract_variant': 'splice',
+'stop_gained': 'nonsense',
+'coding_sequence_variant': 'none',
+'5_prime_UTR_variant': 'none',
+'regulatory_region_variant': 'none',
+'splice_donor_variant': 'splice',
+'splice_acceptor_variant': 'splice',
+'non_coding_transcript_variant': 'none',
+'splice_donor_region_variant': 'splice',
+'splice_donor_5th_base_variant': 'splice',
+'TF_binding_site_variant': 'none',
+'start_lost': 'nonsense',
+'incomplete_terminal_codon_variant': 'nonsense'
+}
+
+def convert_to_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+def Transform_MaGeCK(filename):
+    Mage = pd.read_csv(filename,sep='\t',header=0)
+    returned = pd.DataFrame({
+    'id': Mage.id,
+    'LFC': [None] * len(Mage.id),
+    'p_value': [None] * len(Mage.id)
+    })
+    returned['LFC'] = Mage['pos|lfc']
+    returned['p_value'] = [row['neg|p-value'] if row['pos|lfc']<0 else row['pos|p-value'] for _, row in Mage.iterrows()]
+    return returned
+
+
+def parse_VEP(filename, variant_consequences_mapping):
+    # From Oligomer.py https://github.com/CERC-Genomic-Medicine/CRISPR_Library_prep.git
+    with open(filename) as f:
+        for line in f:
+            if line[0:2]=='##':
+                continue
+            elif line[0:1]=='#':
+                header = line.strip('\n').split("\t")
+                colConsequence = header.index('Consequence')
+                colAA = header.index('Protein_position')
+            else :
+                if 'header' not in locals():
+                    raise Exception("VEP format not as expected") 
+                else :
+                    record = line.strip('\n').split("\t")
+                    ID = record[0]
+                    POSi = record[colAA].split('-')[0]
+                    POS = convert_to_int(POSi)
+                    if 'non-sense' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                        consequence = 'non-sense'
+                    elif 'splice' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                        consequence = 'splice'
+                    elif 'missense' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                        consequence = 'missense'
+                    elif 'synonymous' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                        consequence = 'synonymous'
+                    else :
+                        consequence = None
+                    yield ID, POS, consequence
 
 # Function to generate a random color
 def is_valid_color(color):
@@ -48,6 +155,33 @@ def is_valid_color(color):
         return True
     except ValueError:
         return False
+
+
+def calc_biological_significance(value, distribution,method,thresh):
+    if method == 'Rank':
+        MAX = distribution.quantile(q=1-thresh)
+        MIN = distribution.quantile(q=thresh)
+        sign=value<=MIN or value>=MAX
+    if method == 'binom_test':
+        # Count how many values are greater than or equal to the test value
+        greater_equal_count = sum(v >= value for v in distribution)
+        n = len(distribution)
+        
+        # Perform the binom test
+        p_value = binom_test(greater_equal_count, n, 0.5, alternative='two-sided')
+        sign= thresh>p_value
+    
+    elif method == 'sign_test':
+        # Count positive and negative differences
+        positive_differences = sum((v - value) > 0 for v in distribution)
+        negative_differences = sum((v - value) < 0 for v in distribution)
+        
+        # Perform a binomial test for the sign test
+        n = positive_differences + negative_differences
+        p_value = binom_test(positive_differences, n, 0.5, alternative='two-sided')
+        sign= thresh>p_value
+    return sign
+
 
 # Function to get color palettes
 def get_color_palette(num_entries):
@@ -128,7 +262,7 @@ def create_color_dict(df):
 
     return color_dict
 
-def adjust_position(pos, data, b):
+def adjust_position(pos, df, b):
     """
     Adjust the position based on the BED file regions and a condensation factor.
     
@@ -142,7 +276,7 @@ def adjust_position(pos, data, b):
     """
     c = 1 - (1 / b)
     cumulative_intron_length = 0
-    for _, row in data.iterrows():
+    for _, row in df.iterrows():
         start, end = row['start'], row['end']
         if 'intron' in row['name']:
             if start < pos:
@@ -153,7 +287,7 @@ def adjust_position(pos, data, b):
     adjusted_position = pos - c * cumulative_intron_length
     return adjusted_position
 
-def reverse_adjust_position(pos, data, b):
+def reverse_adjust_position(pos, df, b):
     """
     Reverse the adjustement of a position based on the BED file regions and a condensation factor.
     
@@ -166,9 +300,9 @@ def reverse_adjust_position(pos, data, b):
     int: reverse adjusted position.
     """
     cumulative_intron_length = 0
-    for _, row in data.iterrows():
+    for _, row in df.iterrows():
         start, end = row['start'], row['end']
-        adjusted_start, adjusted_end = adjust_position(row['start'],data,b), adjust_position(row['end'],data,b)
+        adjusted_start, adjusted_end = adjust_position(row['start'],df,b), adjust_position(row['end'],df,b)
         if 'intron' in row['name']:
             if adjusted_start < pos :
                 intron_length = min(adjusted_end,pos) - adjusted_start
@@ -233,7 +367,7 @@ def adjusted_ticks_and_labels(minimum, maximum, bed, b,num_ticks):
     return equidistant_ticks, adj_labels
 
 
-def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', legend_title='Legend',legend_mode='Mix', color_dict=None):
+def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', legend_title='Legend',legend_mode='Mix', color_dict=None, Maximum=None, minumum=None):
     """
     Plot genomic regions on the given axis.
     
@@ -259,10 +393,13 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
 
     # Plot each region
     previous_end = None
+    #ax.plot([0, 0], [0.75, 0.25], color='grey', linestyle='-')
+    #ax.plot([Maximum, Maximum], [0.75, 0.25], color='grey', linestyle='-')
     for index, row in df.iterrows():
         start, end = row['start'], row['end']
         length = end - start
-
+        if previous_end is None and start > 0:
+            ax.plot([0, start], [0.5, 0.5], color='grey', linestyle='-')
         # Plot regions not described in the BED file as straight lines
         if previous_end is not None and start > previous_end:
             ax.plot([previous_end, start], [0.5, 0.5], color='grey', linestyle='-')
@@ -276,7 +413,8 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
         elif row['name'] != None:
             color = color_dict[row['name']]
             renderer = ax.figure.canvas.get_renderer()
-            rect = plt.Rectangle((start, 0), end - start, 1, color=color, alpha=0.5)
+            #rect = plt.Rectangle((start, 0), end - start, 1, color=color, alpha=0.5)
+            rect = patches.FancyBboxPatch((start, 0), end - start, 1, color=color, alpha=0.5,boxstyle="round4")
             box=ax.add_patch(rect)
             rect_extent = rect.get_window_extent(renderer=renderer)
             rect_width = rect_extent.width
@@ -286,23 +424,25 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
             ax.plot([start, end], [0.5, 0.5], color=color, linewidth=2)
 
         previous_end = end
-
-    # Add legend
-    if legend_dict:
-        legend_handles = [Patch(color=info['color'], label=f"{name}") for name, info in legend_dict.items()]
-        ax.legend(handles=legend_handles, loc=legend_loc, bbox_to_anchor=(1, 0), title=legend_title,frameon=False)
+    if previous_end < Maximum :
+        ax.plot([previous_end, Maximum], [0.5, 0.5], color='grey', linestyle='-')
 
     # Customize plot
     ax.set_ylim([0, 1])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['left'].set_visible(False)
+    ax.axis('off')
     ax.set_yticks([])
     ax.set_xlabel(xlabel)
     ax.set_title(title)
+    ax.xaxis.set_visible(False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_frame_on(False)
+    if legend_dict:
+        legend_handles = [Patch(color=info['color'], label=f"{name}") for name, info in legend_dict.items()]
+        return legend_handles
 
-def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_width=2, alpha=1.0, size=6, Custom_Xaxis=False):
+
+def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_width=2, alpha=1.0, size=6, Custom_Xaxis=False,stemline_remove=False):
     """
     Create a lollipop plot on the specified axes.
     
@@ -334,8 +474,12 @@ def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_w
         size = [size] * len(x)
     
     (markers, stemlines, baseline) = ax.stem(x, y, linefmt='gray', markerfmt=" ", basefmt=" ")
-    plt.setp(stemlines, alpha=0.15)
-    plt.setp(baseline, alpha=0.15)
+    if stemline_remove :
+        stemlines.remove()
+        baseline.remove()
+    else :
+        plt.setp(stemlines, alpha=0.15)
+        plt.setp(baseline, alpha=0.15)
     for xi, yi, ci, mi, ai, si in zip(x, y, color, marker, alpha, size):
         ax.plot([xi], [yi], marker=mi, color=ci, linestyle='None', alpha=ai, markersize=si)
     
@@ -347,13 +491,14 @@ def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_w
     if Custom_Xaxis :
         ax.set_xticks(Custom_Xaxis[0])
         ax.set_xticklabels(Custom_Xaxis[1])
-        ax.set_xlabel('Genomic Position')
+        ax.set_xlabel('Amino Acid Position')
     else :
         ax.xaxis.set_visible(False)
     for spine in ax.spines.values():
         spine.set_visible(False)
+    ax.set_frame_on(False)
 
-def add_legend(ax, consequence_mapping, pvalue_mapping, loc='upper left', title='Legend'):
+def add_legend(ax, consequence_mapping, pvalue_mapping,transparency=False, add_legend=False ,loc='upper left'):
     """
     Add a legend to the plot for the given consequence mapping and P-value sizes.
     
@@ -372,28 +517,29 @@ def add_legend(ax, consequence_mapping, pvalue_mapping, loc='upper left', title=
     ]
     
     size_legend_elements = [
-        mlines.Line2D([], [], color='gray', marker='o', linestyle='None', markersize=size, label=f'P-value {pvalue}')
+        mlines.Line2D([], [], color='gray', marker='o', linestyle='None', markersize=size, label=f'{pvalue}')
         for pvalue, size in pvalue_mapping.items()
     ]
     
     transparency_legend_elements = [
-        mlines.Line2D([], [], color='gray', marker='o', linestyle='None', markersize=10, alpha=alpha, label=label)
-        for alpha, label in zip([0.2, 1.0], ['True', 'False'])
+        mlines.Line2D([], [], color='purple', marker='o', linestyle='None', markersize=10, alpha=alpha, label=label)
+        for alpha, label in zip([0.2, 1.0], ['p-value<0.05', 'p-value>0.05'])
     ]
 
     # Add subtitles
     subtitle_fontsize = 'medium'
-    subtitle_handles = [
-        mlines.Line2D([], [], color='white', label='Consequence', linestyle='None'),
-        *consequence_legend_elements,
-        mlines.Line2D([], [], color='white', label='P-value Sizes', linestyle='None'),
-        *size_legend_elements,
-        mlines.Line2D([], [], color='white', label='Beyond negative controls', linestyle='None'),
-        *transparency_legend_elements
-    ]
-    
-    # Combine all legend elements with subtitles
-    ax.legend(handles=subtitle_handles, title=title, loc=loc, handlelength=1,bbox_to_anchor=(1, 1), fontsize=subtitle_fontsize, labelspacing=1.5, borderpad=1.5, title_fontsize=subtitle_fontsize,frameon=False)
+    leg_a=ax.legend(handles=consequence_legend_elements,loc='upper left', title='Consequences', handlelength=1,bbox_to_anchor=(1, 1), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False, alignment='left') #,bbox_transform=fig.transFigure
+    if transparency :
+        leg_c=ax.legend(handles=transparency_legend_elements,loc='center left', title='Biologically Significance', handlelength=1,bbox_to_anchor=(1, 0.80), fontsize=subtitle_fontsize, labelspacing=1.25, frameon=False, alignment='left') #,bbox_transform=fig.transFigure
+    leg_b=ax.legend(handles=size_legend_elements, loc='lower left',title='P-values', handlelength=1,bbox_to_anchor=(1, 0.57), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False, alignment='left') #,bbox_transform=fig.transFigure
+    ax.add_artist(leg_a)
+    ax.add_artist(leg_b)
+    if transparency :
+        ax.add_artist(leg_c)
+    if add_legend :
+        leg_d=ax.legend(handles=add_legend, handlelength=1, loc='upper left',bbox_to_anchor=(1, 0.5), labelspacing=1.25,frameon=False, alignment='left',title='Domains')
+        ax.add_artist(leg_b)
+
 
 def highlight_region(df, ax, name,color_dict=None, negative=False,):
     """
@@ -416,8 +562,6 @@ def highlight_region(df, ax, name,color_dict=None, negative=False,):
     bottom, top = ax.get_ylim()
     origin= min(bottom, top) if negative else 0
     length= abs(origin) if negative else top
-    print(bottom)
-    print(top)
     # Add a rectangle covering the whole y-axis
     rect = plt.Rectangle((start, origin),
                              end - start, 
@@ -433,58 +577,94 @@ def highlight_region(df, ax, name,color_dict=None, negative=False,):
 # Plot each region
 if __name__ == '__main__':
     args = parser.parse_args()
-    bed = pd.read_csv(args.bed_file, sep='\s+', header=0)
-    df = pd.read_csv(args.result_file,sep='\s+', header=0)
+    bed = pd.read_csv(args.bed_file, sep='\t', header=0)
+    data = Transform_MaGeCK(args.result_file)
     bed_ajusted=bed.copy()
-
+    plt.rcParams.update({'font.size': 18})
+    if args.negative_control_file :
+        negative_controls = Transform_MaGeCK(args.negative_control_file)
+        distribution = negative_controls['LFC']
+        data['Bio_Sig']=[calc_biological_significance(i, distribution,args.stat_method,args.Biological_threshold) for i in data['LFC']]
+        figB, axB= plt.subplots(1, 1,figsize=(15,15))
+        axB.hist(distribution, color=plt.cm.Paired(0))
+        figB.savefig(args.output + 'negative_controls_distribution.pdf',format="pdf",bbox_inches="tight")
+        MAX = distribution.quantile(q=0.95)
+        MIN = distribution.quantile(q=0.05)
+        print((MAX,MIN))
     b = args.collapse_factor  # Example value for b
-
-    df['Position']=[adjust_position(i,bed,b) for i in df['Position']]
+    if args.collapse_factor !=1 and args.histogram :
+        raise ValueError('Collapse_factor cannot be used in with histogram flag')
+    VEP= pd.DataFrame(parse_VEP(args.vep_file, variant_consequences_mapping))
+    Variant_effect=dict(zip(VEP[0],VEP[2]))
+    Position_dic=dict(zip(VEP[0],VEP[1]))
+    data['Consequence'] = [Variant_effect[i] for i in data['id']]
+    data['Position']=[Position_dic[i] for i in data['id']]
+    data=data.drop(data[data['Position'].isna()].index)
+    data=data.loc[[i!=None for i in data['Consequence']],:]
+    data['Position']=[adjust_position(i,bed,b) for i in data['Position']]
     bed_ajusted['start']=[adjust_position(i,bed,b) for i in bed['start']]
     bed_ajusted['end']=[adjust_position(i,bed,b) for i in bed['end']]
-    maximum=max(pd.concat([bed_ajusted['end'],df['Position']]))
-    minimum=min(pd.concat([bed_ajusted['start'],df['Position']]))
+    maximum=max(pd.concat([bed_ajusted['end'],data['Position']]))
+    minimum=min(pd.concat([bed_ajusted['start'],data['Position']]))
 
     # Constants
-    fig = plt.figure(figsize=(15, 10))
-    gs = fig.add_gridspec(3, hspace=0,wspace=0, height_ratios=[10, 1, 10])
-    ax = gs.subplots(sharex=True)
 
-    # Mapping for markers and colors based on Consequence
-    consequence_mapping = {
-        'synonymous': ('g', 'D'),  # green, diamond
-        'missense': ('purple', 'o'),  # purple, circle
-        'non-sense': ('red', 's'),  # red, square
-        'splice': ('gold', '^')  # gold, triangle
-    }
+    if args.scheme_loc == 'top' :
+        ratios= [1, 20]
+        nfigure = 2
+    elif args.scheme_loc == 'middle' :
+        ratios= [10, 1, 10]
+        nfigure = 3
+    else :
+        ratios= [20, 1]
+        nfigure = 2       
 
+    fig = plt.figure(figsize=(25, 25 if args.histogram else 24,))
+    if args.histogram :
+        gs = fig.add_gridspec(nfigure + args.histogram, hspace=0.05, wspace=0, height_ratios=[2] + ratios, left=0.05, right=1, top=0.95, bottom=0.05)
+        ax = gs.subplots(sharex=True)
+        ax[0].hist(data['Position'], bins=300, color=plt.cm.Paired(0), edgecolor='none')
+        ax[0].xaxis.set_visible(False)
+        for spine in ax[0].spines.values():
+            spine.set_visible(False)
+    else :  
+        gs = fig.add_gridspec(nfigure + args.histogram, hspace=0,wspace=0, height_ratios=ratios)
+        ax = gs.subplots(sharex=True)
+
+    if args.Biological_REP:
+        data=data.drop(data[~data['Bio_Sig']].index)
+    if args.p_thresh:
+        data=data.drop(data[data['p_value']>args.p_thresh].index)
     # Apply mappings and conditions
-    colors = df['Consequence'].map(lambda x: consequence_mapping[x][0])
-    markers = df['Consequence'].map(lambda x: consequence_mapping[x][1])
-    alphas = df['BNC'].map(lambda x: 0.2 if x else 1.0)
+    colors = data['Consequence'].map(lambda x: consequence_mapping[x][0])
+    markers = data['Consequence'].map(lambda x: consequence_mapping[x][1])
+    if args.negative_control_file :
+        alphas = data['Bio_Sig'].map(lambda x: 0.2 if not x else 1.0)
+    data['logpvalue']=data['p_value'].apply(lambda x:-np.log10(x))
+    sizes = data['logpvalue'].apply(lambda x: 2 + 10 * (x / max(data['logpvalue'])))
 
-    df['logpvalue']=df['pvalue'].apply(lambda x:-np.log10(x))
-    sizes = df['logpvalue'].apply(lambda x: 2 + 10 * (x / max(df['logpvalue'])))
-
-    pvalue_levels = [0.05, 0.01, 0.00001]
-    max_pvalue = max(df['logpvalue'])
+    pvalue_levels = [0.05, 0.01, 0.001]
+    max_pvalue = np.max(data['logpvalue'])
     pvalue_mapping = {p: 2 + 10 * (-np.log10(p) / max_pvalue) for p in pvalue_levels}
 
     ticks, labels = adjusted_ticks_and_labels(minimum, maximum, bed, b, 10)
 
     # Plot
-    create_lollipop_plot(ax[0], df.loc[df['LFC']>0,'Position'], df.loc[df['LFC']>0,'LFC'], color=colors[df['LFC']>0], marker=markers[df['LFC']>0], alpha=alphas[df['LFC']>0], size=sizes[df['LFC']>0])
-    if args.highlight:
-        highlight_region(bed_ajusted,ax[0],args.highlight)
-    create_lollipop_plot(ax[2], df.loc[df['LFC']<0,'Position'], df.loc[df['LFC']<0,'LFC'], color=colors[df['LFC']<0], marker=markers[df['LFC']<0], alpha=alphas[df['LFC']<0], size=sizes[df['LFC']<0],Custom_Xaxis=[ticks, labels])
-    if args.highlight:
-        highlight_region(bed_ajusted,ax[2],'Tetramerization_Domain',None,True)
-    plot_genomic_regions(bed_ajusted,ax[1], legend_loc='upper left', xlabel='', title='',legend_title='Features',legend_mode=args.legend_mode)
-
-    add_legend(ax[0], consequence_mapping, pvalue_mapping)
-
-
-    fig.tight_layout()
-    plt.savefig(args.output + '.png')
-    #plt.show()
-
+    if args.scheme_loc == 'middle' :
+        create_lollipop_plot(ax[0 + args.histogram], data.loc[data['LFC']>0,'Position'], data.loc[data['LFC']>0,'LFC'], color=colors[data['LFC']>0], marker=markers[data['LFC']>0], alpha=alphas[data['LFC']>0], size=sizes[data['LFC']>0],stemline_remove=args.no_stem)
+        if args.highlight:
+            highlight_region(bed_ajusted,ax[0 + args.histogram],args.highlight)
+        create_lollipop_plot(ax[2 + args.histogram], data.loc[data['LFC']<0,'Position'], data.loc[data['LFC']<0,'LFC'], color=colors[data['LFC']<0], marker=markers[data['LFC']<0], alpha=alphas[data['LFC']<0], size=sizes[data['LFC']<0],Custom_Xaxis=[ticks, labels],stemline_remove=args.no_stem)
+        if args.highlight:
+            highlight_region(bed_ajusted,ax[2 + args.histogram],args.highlight ,None,True)
+        leg=plot_genomic_regions(bed_ajusted,ax[1 + args.histogram], legend_loc='upper left', xlabel='', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum)
+        add_legend(fig, consequence_mapping, pvalue_mapping,transparency=(not args.Biological_REP),add_legend=leg)
+    else :
+        create_lollipop_plot(ax[(args.scheme_loc == 'bottom') + 1 + args.histogram], data['Position'], data['LFC'], color=colors, marker=markers, alpha=alphas, size=sizes,stemline_remove=args.no_stem)
+        leg=plot_genomic_regions(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 0 + args.histogram], legend_loc='upper left', xlabel='', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum)
+        add_legend(fig, consequence_mapping, pvalue_mapping,transparency=(not args.Biological_REP),add_legend=leg)
+        if args.highlight:
+            highlight_region(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 1 + args.histogram],args.highlight)
+            highlight_region(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 1 + args.histogram],args.highlight,None,True)
+    plt.tight_layout()
+    fig.savefig(args.output + '.pdf',format="pdf",bbox_inches="tight")
