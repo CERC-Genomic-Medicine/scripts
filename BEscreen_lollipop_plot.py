@@ -1,19 +1,45 @@
 #!/usr/bin/env python3
 
 
-#
-# Author : Vincent Chapdelaine (vincent.chapdelaine@mcgill.ca)
-#
-# This scripts includes functions to :
-#     - Create a representation of a protein or gene with feature/domains
-#     - A methodologie to collapse intron (optional)
-#     - Creat a lolliplot
-#
-# The main goal is to represent two results from Base Editing Crispr screening. (as pos/neg lolliplot separated by a diagram of the protein)
-#
-# Example:
-#   python3 .py -b path/to/bedfile.bed -r path/to/crispr_screen.tsv --highlight_region Tetramerization_Domain -m Full --out Lolliplot -c 100
-#
+'''
+AUTHOR: Vincent Chapdelaine <vincent.chapdelaine@mcgill.ca>
+VERSION: 1.1
+YEAR: 2024
+
+Goal :
+
+To produce lollipop plot with schema showing features at location. Lollipop graphic parameters represented p-value/fdr (size), lfc (y axis), position (x axis), Biological significance (optional)
+
+table of Content : 
+
+    Parsers:
+      parse_VEP(filename, variant_consequences_mapping, position): Parses a VEP file and yields specific variant information.
+      Transform_MaGeCK(filename): Transforms a MaGeCK output file into a specific DataFrame format.
+    Color Pack (High reusability):
+      get_color_palette(num_entries): Returns a color palette suitable for a given number of entries.
+      get_color(index, palette, existing_colors): Generates a unique color from a palette, avoiding duplicates.
+      create_color_dict(df): Creates a dictionary mapping names to colors, excluding rows with "intron" in their name.
+      is_valid_color(color): Checks if a color string is valid in matplotlib.
+    Collapse intron :
+      adjust_position(pos, df, b): Adjusts a position based on BED file regions and a condensation factor.
+      reverse_adjust_position(pos, df, b): Reverses the adjustment of a position based on BED file regions and a condensation factor.
+      adjusted_ticks_and_labels(minimum, maximum, bed, b, num_ticks): Adjusts tick positions and labels on a plot based on BED file regions.
+    Graph Pack :
+      plot_genomic_regions(df, ax, legend_loc, title, legend_title, legend_mode, color_dict, Maximum, minumum, Custom_Xaxis, xlabel): Plots genomic regions on a given axis, with custom legend and axis options.
+      add_text_or_legend(ax, start, length, size, text, color, legend_dict, legend_mode): Adds text or legend entry to a plot for a genomic feature.
+      create_lollipop_plot(ax, x, y, color, marker, line_style, line_width, alpha, size, Custom_Xaxis, stemline_remove, fdr, xlabel): Creates a lollipop plot on the specified axes with various customization options.
+      add_legend(ax, consequence_mapping, pvalue_mapping, transparency, add_legend, loc, fdr): Adds a legend to a plot for consequence types and p-value levels.
+      highlight_region(df, ax, name, color_dict, negative): Highlights a region in a plot based on a specified name from a BED DataFrame.
+    Auxiliary: 
+      convert_to_int(s): Converts a string to an integer, returns None if conversion fails.
+      calc_biological_significance(value, distribution, method, thresh): Determines the biological significance of a value against a distribution using a specified method.
+
+ Example:
+   python3 BEscreen_lollipop_plot.py -b path/to/features.bed -i gene_summary.txt -v path/to/VEP.tsv --histogram -m Full --no_stem --scheme_location top -n 'custom:chr19:55113873:55117983' --stat_method sign_test
+
+
+'''
+
 
 import random
 import matplotlib.pyplot as plt
@@ -24,42 +50,38 @@ from matplotlib.patches import Patch
 import matplotlib.patches as patches
 import matplotlib.colors as mcolors
 import argparse
-from scipy.stats import permutation_test
-from scipy.stats import wilcoxon
 from scipy.stats import rankdata
-from scipy.stats import binom_test
+from scipy.stats import binomtest
+import sys
+import re
+import warnings
 
 
-parser = argparse.ArgumentParser(description='A plotting script for loolipop plot')
-parser.add_argument('-b', '--bed', metavar='FILE', dest='bed_file', required=True, type=str, help='space/tab-delimited bed file of features, must contains columns : start, stop and name')
-parser.add_argument('-t', '--target', metavar='FILE', dest='result_file', required=True, type=str, help='space/tab-delimited result file TBD')
-parser.add_argument('-v', '--vep', metavar='FILE', dest='vep_file', required=True, type=str, help='tab delimited variant effect prediction file (VEP)')
-parser.add_argument('-n', '--negative_controls', metavar='FILE', dest='negative_control_file', required=False, type=str, help='space/tab-delimited result file TBD')
+
+
+parser = argparse.ArgumentParser(description='This script produce a lolipop plot (with domain/feature annotations) base on a MaGeCK, a Variant Effect Prediction file (VEP), and bed style file')
+parser.add_argument('-b', '--bed', metavar='FILE', dest='bed_file', required=True, type=str, help='space/tab-delimited bed file of features, must contains columns : protein, start, stop and name (optional color)')
+parser.add_argument('-i', '--input', metavar='FILE', dest='result_file', required=True, type=str, help='MaGeCK output or file with tab/space delimited data containing columns : (id,lfc, p-value,fdr) id requiere format Protein_number')
+parser.add_argument('-v', '--vep', metavar='FILE', dest='vep_file', required=True, type=str, help='tab delimited variant effect prediction file (VEP) with id corresponding to input')
 parser.add_argument('-c', '--intron_collapse', metavar='number', dest='collapse_factor', required=False,default=1 , type=int, help='factor by which to collapse introns (default uncollapsed), intron are defined by name containing "intron"')
-parser.add_argument('--stat_method',metavar='str', dest='stat_method', required=False,default='Rank' , choices={"binom_sign", "Rank",'sign_test'}, type=str, help='Statistical method to calculate p-value of Biological significance')
+parser.add_argument('-n', '--negative_Control', metavar='str', dest='Control', required=False, nargs='+', type=str, help='list of negative control protein/region (if no negative controls (empty widows/regions) Biological significance ignored)')
+parser.add_argument('--empty_controls',  metavar='str', dest='Control_empty', required=False, help='Use the list of empty windows sgrna (default empty widows are ignored)')
+parser.add_argument('--stat_method',metavar='str', dest='stat_method', required=False,default='quantile' , choices={"binom_sign", "quantile",'sign_test'}, type=str, help='Statistical method to calculate p-value of Biological significance, quantile uses p-value as q-quantile limit')
 parser.add_argument('--Bio_threshold', dest='Biological_threshold', metavar='float',type=float, required=False, default='0.05', help='Biological threshold (two-sided)')
 parser.add_argument('--scheme_location', metavar='str', dest='scheme_loc', required=False,default='middle' , type=str, choices={"top",'bottom', "middle"}, help='Location of the protein/gene scheme ("top"/"middle"/"bottom") (default : middle)')
 parser.add_argument('--histogram', dest='histogram', required=False,action='store_true', help='Flag for wheather a histogram should represent the coverage')
 parser.add_argument('-p', '--Prob_Threshold', metavar='float',type=float, dest='p_thresh', required=False, default='1', help='P-Value Threshold for loolipop representation')
-parser.add_argument('-B', '--Biological_Sig', dest='Biological_REP', action='store_true', help='Flag for Biological significance requirerement in lolipop plot')
+parser.add_argument('-B', '--Biological_Sig', dest='Biological_REQ', action='store_true', help='Flag for Biological significance requirerement in lolipop plot (not present not represented)')
 parser.add_argument('--no_stem', dest='no_stem', action='store_true', help='Flag to remove the stemlines')
+parser.add_argument('-F', dest='fdr', action='store_true', help='Flag to use FDR (default p-value)')
+parser.add_argument('--X', metavar='str', dest='X_axis', required=False,default='AA' , type=str, choices={"AA",'Nuc'}, help='X axis label')
 parser.add_argument('-m', '--legend_mode', metavar='str', dest='legend_mode', required=False,default='Mix' , choices={"Full", "Mix"}, type=str, help='legend mode (possible values Mix (default) or Full), full all features are in legend, mix of on-graph and on-legend')
-parser.add_argument('--highlight_region', metavar='str', dest='highlight', required=False,default=None , type=str, help='Feature to be highlighted')
+parser.add_argument('--highlight_region', metavar='str', dest='highlight', required=False,default=None ,nargs='+', type=str, help='Feature to be highlighted expect format protein-feature (can be multiple)')
 parser.add_argument('--out', dest='output', default='output', type=str, help='Prefix of output image file name (output.png).')
 
-# Constante
-
-#def wilcoxon_test(sample, hypothesized_median=0):
-#    # Calculate the differences from the hypothesized median
-#    differences = [x - hypothesized_median for x in sample]
-#    
-#    # Perform the Wilcoxon signed-rank test
-#    stat, p_value = wilcoxon(differences,alternative='two-sided')
-#    
-#    return p_value
+plt.rcParams.update({'font.size': 18})
 
 
-# Mapping for markers and colors based on Consequence
 consequence_mapping = {
     'synonymous': ('g', 'D'),  # green, diamond
     'missense': ('purple', 'o'),  # purple, circle
@@ -70,14 +92,14 @@ variant_consequences_mapping = {
 'missense_variant': 'missense',
 'intron_variant': 'none',
 'downstream_gene_variant': 'none',
-'NMD_transcript_variant': 'nonsense',
+'NMD_transcript_variant': 'non-sense',
 'upstream_gene_variant': 'none',
 '3_prime_UTR_variant': 'none',
 'synonymous_variant': 'synonymous',
 'non_coding_transcript_exon_variant': 'none',
 'splice_region_variant': 'splice',
 'splice_polypyrimidine_tract_variant': 'splice',
-'stop_gained': 'nonsense',
+'stop_gained': 'non-sense',
 'coding_sequence_variant': 'none',
 '5_prime_UTR_variant': 'none',
 'regulatory_region_variant': 'none',
@@ -87,8 +109,8 @@ variant_consequences_mapping = {
 'splice_donor_region_variant': 'splice',
 'splice_donor_5th_base_variant': 'splice',
 'TF_binding_site_variant': 'none',
-'start_lost': 'nonsense',
-'incomplete_terminal_codon_variant': 'nonsense'
+'start_lost': 'non-sense',
+'incomplete_terminal_codon_variant': 'non-sense'
 }
 
 def convert_to_int(s):
@@ -101,15 +123,16 @@ def Transform_MaGeCK(filename):
     Mage = pd.read_csv(filename,sep='\t',header=0)
     returned = pd.DataFrame({
     'id': Mage.id,
-    'LFC': [None] * len(Mage.id),
-    'p_value': [None] * len(Mage.id)
+    'lfc': [None] * len(Mage.id),
+    'p_value': [None] * len(Mage.id),
+    'fdr': [None] * len(Mage.id)
     })
-    returned['LFC'] = Mage['pos|lfc']
+    returned['lfc'] = Mage['pos|lfc']
     returned['p_value'] = [row['neg|p-value'] if row['pos|lfc']<0 else row['pos|p-value'] for _, row in Mage.iterrows()]
+    returned['fdr'] = [row['neg|fdr'] if row['pos|lfc']<0 else row['pos|fdr'] for _, row in Mage.iterrows()]
     return returned
 
-
-def parse_VEP(filename, variant_consequences_mapping):
+def parse_VEP(filename, variant_consequences_mapping, position):
     # From Oligomer.py https://github.com/CERC-Genomic-Medicine/CRISPR_Library_prep.git
     with open(filename) as f:
         for line in f:
@@ -119,25 +142,31 @@ def parse_VEP(filename, variant_consequences_mapping):
                 header = line.strip('\n').split("\t")
                 colConsequence = header.index('Consequence')
                 colAA = header.index('Protein_position')
+                colIMPACT= header.index('IMPACT')
+                colAmino = header.index('Amino_acids')
+                colLoc=header.index('Location')
             else :
                 if 'header' not in locals():
                     raise Exception("VEP format not as expected") 
                 else :
                     record = line.strip('\n').split("\t")
                     ID = record[0]
-                    POSi = record[colAA].split('-')[0]
-                    POS = convert_to_int(POSi)
-                    if 'non-sense' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
-                        consequence = 'non-sense'
-                    elif 'splice' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                    if position == 'AA':
+                        POSi = record[colAA].split('-')[0] if record[colAA].split('-')[0] != '?' else record[colAA].split('-')[1]
+                        POS = convert_to_int(POSi)
+                    elif position == 'Nuc':
+                        Pos= re.search(r'chr\d+:(\d+)-\d+', record[colLoc]).group(1)
+                    if 'splice' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
                         consequence = 'splice'
+                    elif 'non-sense' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
+                        consequence = 'non-sense'
                     elif 'missense' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
                         consequence = 'missense'
                     elif 'synonymous' in [variant_consequences_mapping[i] for i in record[colConsequence].split(',')]:
                         consequence = 'synonymous'
                     else :
                         consequence = None
-                    yield ID, POS, consequence
+                    yield ID, POS, consequence, record[colConsequence], record[colIMPACT],record[colAmino]
 
 # Function to generate a random color
 def is_valid_color(color):
@@ -158,7 +187,7 @@ def is_valid_color(color):
 
 
 def calc_biological_significance(value, distribution,method,thresh):
-    if method == 'Rank':
+    if method == 'quantile':
         MAX = distribution.quantile(q=1-thresh)
         MIN = distribution.quantile(q=thresh)
         sign=value<=MIN or value>=MAX
@@ -168,8 +197,8 @@ def calc_biological_significance(value, distribution,method,thresh):
         n = len(distribution)
         
         # Perform the binom test
-        p_value = binom_test(greater_equal_count, n, 0.5, alternative='two-sided')
-        sign= thresh>p_value
+        p_value = binomtest(greater_equal_count, n, 0.5, alternative='two-sided').pvalue
+        sign= thresh>=p_value
     
     elif method == 'sign_test':
         # Count positive and negative differences
@@ -178,8 +207,8 @@ def calc_biological_significance(value, distribution,method,thresh):
         
         # Perform a binomial test for the sign test
         n = positive_differences + negative_differences
-        p_value = binom_test(positive_differences, n, 0.5, alternative='two-sided')
-        sign= thresh>p_value
+        p_value = binomtest(positive_differences, n, 0.5, alternative='two-sided').pvalue
+        sign= thresh>=p_value
     return sign
 
 
@@ -194,14 +223,14 @@ def get_color_palette(num_entries):
     Returns:
     str: color palette
     """
-    pastel1 = plt.colormaps.get_cmap('Pastel1').colors
-    tab20 = plt.colormaps.get_cmap('tab20').colors
+    pastel1 = plt.get_cmap('Pastel1').colors
+    tab20 = plt.get_cmap('tab20').colors
     if num_entries <= len(pastel1):
         return pastel1
     elif num_entries <= len(tab20):
         return tab20
     else:
-        print("Warning: Number of entries exceeds the available colors in tab20 palette.")
+        warnings.warn("Warning: Number of entries exceeds the available colors in tab20 palette.")
         return tab20
 
 def get_color(index, palette, existing_colors):
@@ -235,6 +264,7 @@ def create_color_dict(df):
     Returns:
     dict: Dictionary mapping region names to their colors.
     """
+    df=df[~df['name'].isna()].copy()
     if 'color' in df.columns:
         existing_colors = {color for color in df.get('color', []) if pd.notnull(color) and is_valid_color(color)}
         filtered_df = df[~df['name'].str.contains('intron') & (~df['color'].apply(is_valid_color) | df['color'].isnull())]
@@ -278,7 +308,7 @@ def adjust_position(pos, df, b):
     cumulative_intron_length = 0
     for _, row in df.iterrows():
         start, end = row['start'], row['end']
-        if 'intron' in row['name']:
+        if not row['name'] and 'intron' in row['name']:
             if start < pos:
                 intron_length = min(end, pos) - start
                 cumulative_intron_length += intron_length
@@ -303,7 +333,7 @@ def reverse_adjust_position(pos, df, b):
     for _, row in df.iterrows():
         start, end = row['start'], row['end']
         adjusted_start, adjusted_end = adjust_position(row['start'],df,b), adjust_position(row['end'],df,b)
-        if 'intron' in row['name']:
+        if not row['name'] and 'intron' in row['name']:
             if adjusted_start < pos :
                 intron_length = min(adjusted_end,pos) - adjusted_start
                 cumulative_intron_length += intron_length
@@ -367,7 +397,7 @@ def adjusted_ticks_and_labels(minimum, maximum, bed, b,num_ticks):
     return equidistant_ticks, adj_labels
 
 
-def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', legend_title='Legend',legend_mode='Mix', color_dict=None, Maximum=None, minumum=None):
+def plot_genomic_regions(df, ax, legend_loc='upper left', title='', legend_title='Legend',legend_mode='Mix', color_dict=None, Maximum=None, minumum=None, Custom_Xaxis=False, xlabel='Amino acid position'):
     """
     Plot genomic regions on the given axis.
     
@@ -405,12 +435,12 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
             ax.plot([previous_end, start], [0.5, 0.5], color='grey', linestyle='-')
 
         # Plot described regions
-        if 'intron' in row['name']:
+        if not row['name'] and 'intron' in row['name']:
             # Plot as a broken line joined upward
             mid_point = start + (end - start) / 2
             ax.plot([start, mid_point], [0.5, 0.5 + 0.5], color='black', linestyle='--')
             ax.plot([mid_point, end], [0.5 + 0.5, 0.5], color='black', linestyle='--')
-        elif row['name'] != None:
+        elif not pd.isna(row['name']):
             color = color_dict[row['name']]
             renderer = ax.figure.canvas.get_renderer()
             #rect = plt.Rectangle((start, 0), end - start, 1, color=color, alpha=0.5)
@@ -421,7 +451,7 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
             # Add text inside the box or to the legend
             add_text_or_legend(ax, start, end - start,rect_width , row['name'], color, legend_dict, legend_mode)
         else:
-            ax.plot([start, end], [0.5, 0.5], color=color, linewidth=2)
+            ax.plot([start, end], [0.5, 0.5], color='grey', linestyle='-')
 
         previous_end = end
     if previous_end < Maximum :
@@ -429,11 +459,14 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
 
     # Customize plot
     ax.set_ylim([0, 1])
-    ax.axis('off')
-    ax.set_yticks([])
-    ax.set_xlabel(xlabel)
-    ax.set_title(title)
-    ax.xaxis.set_visible(False)
+    ax.grid(False)
+    ax.yaxis.set_visible(False)
+    if Custom_Xaxis :
+        ax.set_xticks(Custom_Xaxis[0])
+        ax.set_xticklabels(Custom_Xaxis[1])
+        ax.set_xlabel(xlabel)
+    else :
+        ax.xaxis.set_visible(False)
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.set_frame_on(False)
@@ -442,7 +475,7 @@ def plot_genomic_regions(df, ax, legend_loc='upper left', xlabel='', title='', l
         return legend_handles
 
 
-def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_width=2, alpha=1.0, size=6, Custom_Xaxis=False,stemline_remove=False):
+def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_width=2, alpha=1.0, size=6, Custom_Xaxis=False,stemline_remove=False, fdr=False, xlabel='Amino acid position'):
     """
     Create a lollipop plot on the specified axes.
     
@@ -472,8 +505,8 @@ def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_w
     
     if isinstance(size, (int, float)):
         size = [size] * len(x)
-    
-    (markers, stemlines, baseline) = ax.stem(x, y, linefmt='gray', markerfmt=" ", basefmt=" ")
+
+    (markers, stemlines, baseline) = ax.stem(x.to_numpy(), y.to_numpy(), linefmt='gray', markerfmt=" ", basefmt=" ")
     if stemline_remove :
         stemlines.remove()
         baseline.remove()
@@ -491,14 +524,14 @@ def create_lollipop_plot(ax, x, y, color='b', marker='o', line_style='-', line_w
     if Custom_Xaxis :
         ax.set_xticks(Custom_Xaxis[0])
         ax.set_xticklabels(Custom_Xaxis[1])
-        ax.set_xlabel('Amino Acid Position')
+        ax.set_xlabel(xlabel)
     else :
         ax.xaxis.set_visible(False)
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.set_frame_on(False)
 
-def add_legend(ax, consequence_mapping, pvalue_mapping,transparency=False, add_legend=False ,loc='upper left'):
+def add_legend(ax, consequence_mapping, pvalue_mapping,transparency=None, add_legend=False ,loc='upper left', fdr=False):
     """
     Add a legend to the plot for the given consequence mapping and P-value sizes.
     
@@ -520,24 +553,24 @@ def add_legend(ax, consequence_mapping, pvalue_mapping,transparency=False, add_l
         mlines.Line2D([], [], color='gray', marker='o', linestyle='None', markersize=size, label=f'{pvalue}')
         for pvalue, size in pvalue_mapping.items()
     ]
-    
-    transparency_legend_elements = [
-        mlines.Line2D([], [], color='purple', marker='o', linestyle='None', markersize=10, alpha=alpha, label=label)
-        for alpha, label in zip([0.2, 1.0], ['p-value<0.05', 'p-value>0.05'])
-    ]
+    if transparency:
+        transparency_legend_elements = [
+            mlines.Line2D([], [], color='purple', marker='o', linestyle='None', markersize=10, alpha=alpha, label=label)
+            for alpha, label in zip([0.4, 1.0], transparency)
+        ]
 
     # Add subtitles
     subtitle_fontsize = 'medium'
-    leg_a=ax.legend(handles=consequence_legend_elements,loc='upper left', title='Consequences', handlelength=1,bbox_to_anchor=(1, 1), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False, alignment='left') #,bbox_transform=fig.transFigure
+    leg_a=ax.legend(handles=consequence_legend_elements,loc='upper left', title='Consequences', handlelength=1,bbox_to_anchor=(1, 1), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False) #,bbox_transform=fig.transFigure
     if transparency :
-        leg_c=ax.legend(handles=transparency_legend_elements,loc='center left', title='Biologically Significance', handlelength=1,bbox_to_anchor=(1, 0.80), fontsize=subtitle_fontsize, labelspacing=1.25, frameon=False, alignment='left') #,bbox_transform=fig.transFigure
-    leg_b=ax.legend(handles=size_legend_elements, loc='lower left',title='P-values', handlelength=1,bbox_to_anchor=(1, 0.57), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False, alignment='left') #,bbox_transform=fig.transFigure
+        leg_c=ax.legend(handles=transparency_legend_elements,loc='center left', title='Biologically Significance', handlelength=1,bbox_to_anchor=(1, 0.80), fontsize=subtitle_fontsize, labelspacing=1.25, frameon=False) #,bbox_transform=fig.transFigure
+    leg_b=ax.legend(handles=size_legend_elements, loc='lower left',title='FDR' if fdr else 'P-value', handlelength=1,bbox_to_anchor=(1, 0.57), fontsize=subtitle_fontsize, labelspacing=1.25,frameon=False) #,bbox_transform=fig.transFigure
     ax.add_artist(leg_a)
     ax.add_artist(leg_b)
     if transparency :
         ax.add_artist(leg_c)
     if add_legend :
-        leg_d=ax.legend(handles=add_legend, handlelength=1, loc='upper left',bbox_to_anchor=(1, 0.5), labelspacing=1.25,frameon=False, alignment='left',title='Domains')
+        leg_d=ax.legend(handles=add_legend, handlelength=1, loc='upper left',bbox_to_anchor=(1, 0.5), labelspacing=1.25,frameon=False,title='Domains')
         ax.add_artist(leg_b)
 
 
@@ -577,94 +610,173 @@ def highlight_region(df, ax, name,color_dict=None, negative=False,):
 # Plot each region
 if __name__ == '__main__':
     args = parser.parse_args()
-    bed = pd.read_csv(args.bed_file, sep='\t', header=0)
-    data = Transform_MaGeCK(args.result_file)
-    bed_ajusted=bed.copy()
-    plt.rcParams.update({'font.size': 18})
-    if args.negative_control_file :
-        negative_controls = Transform_MaGeCK(args.negative_control_file)
-        distribution = negative_controls['LFC']
-        data['Bio_Sig']=[calc_biological_significance(i, distribution,args.stat_method,args.Biological_threshold) for i in data['LFC']]
-        figB, axB= plt.subplots(1, 1,figsize=(15,15))
-        axB.hist(distribution, color=plt.cm.Paired(0))
-        figB.savefig(args.output + 'negative_controls_distribution.pdf',format="pdf",bbox_inches="tight")
-        MAX = distribution.quantile(q=0.95)
-        MIN = distribution.quantile(q=0.05)
-        print((MAX,MIN))
+    #### Input Parsing
+    bed_full = pd.read_csv(args.bed_file, sep='\t', header=0)
+    if not set(['start','end','name','proteins']).issubset(bed_full.columns):
+        raise ValueError('Bed-like file does not contain the relevant columns')
+    try :
+        data_full = pd.read_csv(args.result_file, sep='\s+',header=0, usecols=['id','lfc', 'p-value','fdr'])
+    except:
+        try :
+            data_full = Transform_MaGeCK(args.result_file)
+        except: 
+            raise ValueError('Main input data (-i) does not have a supported format')
+    data_full['proteins']=[i.split('_')[0] for i in data_full['id']]
     b = args.collapse_factor  # Example value for b
+    Biological_REP = args.Control or args.Control_empty # Whether or not Biological significance is to be analysed
+
     if args.collapse_factor !=1 and args.histogram :
         raise ValueError('Collapse_factor cannot be used in with histogram flag')
-    VEP= pd.DataFrame(parse_VEP(args.vep_file, variant_consequences_mapping))
+
+    if args.Control :
+        ### Treating the controls
+        protein=set(data_full['proteins'].values)
+        if not set(args.Control).issubset(protein) :
+            raise ValueError(f'specified negative control(s) not found in main input data {set(args.Control)-protein}')
+        neg_controls_true = [i in args.Control for i in data_full['proteins']]
+        negative_controls = data_full.loc[neg_controls_true,:]
+        data_full=data_full.loc[~np.array(neg_controls_true),:] 
+
+    ### Analysing the Vep
+    VEP= pd.DataFrame(parse_VEP(args.vep_file, variant_consequences_mapping,position=args.X_axis))
     Variant_effect=dict(zip(VEP[0],VEP[2]))
     Position_dic=dict(zip(VEP[0],VEP[1]))
-    data['Consequence'] = [Variant_effect[i] for i in data['id']]
-    data['Position']=[Position_dic[i] for i in data['id']]
-    data=data.drop(data[data['Position'].isna()].index)
-    data=data.loc[[i!=None for i in data['Consequence']],:]
-    data['Position']=[adjust_position(i,bed,b) for i in data['Position']]
-    bed_ajusted['start']=[adjust_position(i,bed,b) for i in bed['start']]
-    bed_ajusted['end']=[adjust_position(i,bed,b) for i in bed['end']]
-    maximum=max(pd.concat([bed_ajusted['end'],data['Position']]))
-    minimum=min(pd.concat([bed_ajusted['start'],data['Position']]))
+    Variant_effect_full=dict(zip(VEP[0],VEP[3]))
+    Variant_impact=dict(zip(VEP[0],VEP[4]))
+    Variant_Amino=dict(zip(VEP[0],VEP[5]))
 
-    # Constants
-
-    if args.scheme_loc == 'top' :
-        ratios= [1, 20]
-        nfigure = 2
-    elif args.scheme_loc == 'middle' :
-        ratios= [10, 1, 10]
-        nfigure = 3
+    ### treating Empty controls
+    if args.Control_empty :
+        empties = pd.read_csv(args.Control_empty, sep='\t', header=None)[0]
+        empties_negative = data_full[data_full['id'].isin(empties)]
+        negative_controls=pd.concat([negative_controls,empties_negative])
+        data_full = data_full[~data_full['id'].isin(empties)]
+    
+    ### Analysing Biological Significance
+    if Biological_REP:
+        distribution = negative_controls['lfc']
+        data_full['Bio_Sig']=[calc_biological_significance(i, distribution,args.stat_method,args.Biological_threshold) for i in data_full['lfc']]
+        figB, axB= plt.subplots(1, 1,figsize=(15,15))
+        axB.hist(distribution, color=plt.cm.Paired(0))
+        figB.savefig(args.output + '_negative_controls_distribution.pdf',format="pdf",bbox_inches="tight")
+    ### If we don't analyse Biological significance all true
     else :
-        ratios= [20, 1]
-        nfigure = 2       
+        data_full['Bio_Sig']=True
 
-    fig = plt.figure(figsize=(25, 25 if args.histogram else 24,))
-    if args.histogram :
-        gs = fig.add_gridspec(nfigure + args.histogram, hspace=0.05, wspace=0, height_ratios=[2] + ratios, left=0.05, right=1, top=0.95, bottom=0.05)
-        ax = gs.subplots(sharex=True)
-        ax[0].hist(data['Position'], bins=300, color=plt.cm.Paired(0), edgecolor='none')
-        ax[0].xaxis.set_visible(False)
-        for spine in ax[0].spines.values():
-            spine.set_visible(False)
-    else :  
-        gs = fig.add_gridspec(nfigure + args.histogram, hspace=0,wspace=0, height_ratios=ratios)
-        ax = gs.subplots(sharex=True)
+    ## trouble shoot warning if sgRNA absent from VEP
+    if (~data_full['id'].isin(Variant_effect.keys())).any():
+        warnings.warn(f'warning : {sum(~data_full["id"].isin(Variant_effect.keys()))} were filtered out because they were not in found in VEP file')
+    data_full=data_full[data_full['id'].isin(Variant_effect.keys())]
 
-    if args.Biological_REP:
-        data=data.drop(data[~data['Bio_Sig']].index)
-    if args.p_thresh:
-        data=data.drop(data[data['p_value']>args.p_thresh].index)
-    # Apply mappings and conditions
-    colors = data['Consequence'].map(lambda x: consequence_mapping[x][0])
-    markers = data['Consequence'].map(lambda x: consequence_mapping[x][1])
-    if args.negative_control_file :
-        alphas = data['Bio_Sig'].map(lambda x: 0.2 if not x else 1.0)
-    data['logpvalue']=data['p_value'].apply(lambda x:-np.log10(x))
-    sizes = data['logpvalue'].apply(lambda x: 2 + 10 * (x / max(data['logpvalue'])))
+    ### Adding VEP data to dataset
+    proteins = set([i.split('_')[0] for i in data_full['id']])
+    data_full['Consequence'] = [Variant_effect[i] for i in data_full['id']]
+    data_full['Position']=[Position_dic[i] for i in data_full['id']]    
 
-    pvalue_levels = [0.05, 0.01, 0.001]
-    max_pvalue = np.max(data['logpvalue'])
-    pvalue_mapping = {p: 2 + 10 * (-np.log10(p) / max_pvalue) for p in pvalue_levels}
-
-    ticks, labels = adjusted_ticks_and_labels(minimum, maximum, bed, b, 10)
-
-    # Plot
-    if args.scheme_loc == 'middle' :
-        create_lollipop_plot(ax[0 + args.histogram], data.loc[data['LFC']>0,'Position'], data.loc[data['LFC']>0,'LFC'], color=colors[data['LFC']>0], marker=markers[data['LFC']>0], alpha=alphas[data['LFC']>0], size=sizes[data['LFC']>0],stemline_remove=args.no_stem)
-        if args.highlight:
-            highlight_region(bed_ajusted,ax[0 + args.histogram],args.highlight)
-        create_lollipop_plot(ax[2 + args.histogram], data.loc[data['LFC']<0,'Position'], data.loc[data['LFC']<0,'LFC'], color=colors[data['LFC']<0], marker=markers[data['LFC']<0], alpha=alphas[data['LFC']<0], size=sizes[data['LFC']<0],Custom_Xaxis=[ticks, labels],stemline_remove=args.no_stem)
-        if args.highlight:
-            highlight_region(bed_ajusted,ax[2 + args.histogram],args.highlight ,None,True)
-        leg=plot_genomic_regions(bed_ajusted,ax[1 + args.histogram], legend_loc='upper left', xlabel='', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum)
-        add_legend(fig, consequence_mapping, pvalue_mapping,transparency=(not args.Biological_REP),add_legend=leg)
+     ## trouble shoot warning if sgRNA has no clear position in VEP
+    if data_full['Position'].isna().any() and  args.X_axis == 'AA':
+        warnings.warn(f'warning : {sum(data_full["Position"].isna())} were filtered out due unclear position \n this only a warning du to X axis is AA (sgRNA can ve outside coding regions) ')
     else :
-        create_lollipop_plot(ax[(args.scheme_loc == 'bottom') + 1 + args.histogram], data['Position'], data['LFC'], color=colors, marker=markers, alpha=alphas, size=sizes,stemline_remove=args.no_stem)
-        leg=plot_genomic_regions(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 0 + args.histogram], legend_loc='upper left', xlabel='', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum)
-        add_legend(fig, consequence_mapping, pvalue_mapping,transparency=(not args.Biological_REP),add_legend=leg)
-        if args.highlight:
-            highlight_region(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 1 + args.histogram],args.highlight)
-            highlight_region(bed_ajusted,ax[(args.scheme_loc == 'bottom') + 1 + args.histogram],args.highlight,None,True)
-    plt.tight_layout()
-    fig.savefig(args.output + '.pdf',format="pdf",bbox_inches="tight")
+        raise ValueError(f'warning : {sum(data_full["Position"].isna())} were filtered out due unclear position \n this is an error because X axis is Nucleotide (and thus sgRNA should have a position) \n list {data_full[data_full["Position"].isna(),"id"]}')
+    data_full=data_full.drop(data_full[data_full["Position"].isna()].index)
+
+    ### trouble shoot warning if sgRNA has no clear consequence in VEP
+    if sum([i==None for i in data_full['Consequence']]) != 0 :
+        warnings.warn(f'warning : {sum([i==None for i in data_full["Consequence"]])} were filtered out due to unclear consequence (i.e. no base category could be found)\n')
+
+    data_full=data_full.loc[[i!=None for i in data_full['Consequence']],:].copy()
+
+    ### trouble shoot user error proteins bed and protein input file
+    if not proteins.issubset(set(bed_full.proteins)): 
+        raise ValueError(f'Not all proteins/regions in the main input file (-i) is present in the Bed-like file:{set(proteins)-set(bed_full.proteins)} \n')
+
+    ### Test highlight list
+    if args.highlight:
+        if not set(args.highlight).issubset(set(bedfull['proteins'] + '-' + bedfull['name'])):
+            raise ValueError(f'Not all proteins/regions to be highlighted are in the bed-like file under the protein-feature format :{set(args.highlight)-set(bedfull["proteins"] + "-" + bedfull["name"])} \n')
+    
+    for protein in proteins:
+        ### Produce a graph per protein for all protein
+        ### Produce 
+        data=data_full.loc[data_full['proteins']==protein,:]
+        bed_adjusted=bed_full.loc[bed_full['proteins']==protein,:]
+        bed=bed_adjusted.copy()
+        data.loc[:,'Position']=[adjust_position(i,bed,b) for i in data['Position']].copy() #adjust if intron collapse
+        bed_adjusted.loc[:,'start']=[adjust_position(i,bed,b) for i in bed['start']].copy()  #adjust if intron collapse
+        bed_adjusted.loc[:,'end']=[adjust_position(i,bed,b) for i in bed['end']].copy()  #adjust if intron collapse
+        maximum=max(pd.concat([bed_adjusted['end'],data['Position']])) # max in graph
+        minimum=min(pd.concat([bed_adjusted['start'],data['Position']])) # min in graph
+        
+        # Figure Configuration
+        if args.scheme_loc == 'top' :
+            ratios= [1, 20]
+            nfigure = 2
+        elif args.scheme_loc == 'middle' :
+            ratios= [10, 1, 10]
+            nfigure = 3
+        else :
+            ratios= [20, 1]
+            nfigure = 2       
+        fig = plt.figure(figsize=(25, 25 if args.histogram else 24,))
+        ### Histogram plot and figure grid config (according to histogram yes/no)
+        if args.histogram :
+            gs = fig.add_gridspec(nfigure + args.histogram, hspace=0.05, wspace=0, height_ratios=[2] + ratios, left=0.05, right=1, top=0.95, bottom=0.05)
+            ax = gs.subplots(sharex=True)
+            ax[0].hist(data['Position'], bins=300, color=plt.cm.Paired(0), edgecolor='none')
+            ax[0].xaxis.set_visible(False)
+            for spine in ax[0].spines.values():
+                spine.set_visible(False)
+        else :  
+            gs = fig.add_gridspec(nfigure + args.histogram, hspace=0,wspace=0, height_ratios=ratios)
+            ax = gs.subplots(sharex=True)
+        
+        if args.fdr :
+            data['p_value']=data['fdr']
+
+        ## Represent only biological significant
+        if args.Biological_REQ:
+            data=data.drop(data[~data['Bio_Sig']].index)
+        ## Represent only p-val significant (default 1 so no filter)
+        if args.p_thresh:
+            data=data.drop(data[data['p_value']>args.p_thresh].index)
+
+        ### parameter data representation
+        colors = data['Consequence'].map(lambda x: consequence_mapping[x][0])
+        markers = data['Consequence'].map(lambda x: consequence_mapping[x][1])
+        alphas = data['Bio_Sig'].map(lambda x: 0.4 if not x else 1.0)
+        if (not args.Biological_REQ and Biological_REP):
+            if args.stat_method=='quantile':
+                Biosig_labels=[fr"$Q_{{{args.Biological_threshold:.2f}}} \leq x \leq Q_{{{1 - args.Biological_threshold:.2f}}}$", fr"$x < Q_{{{args.Biological_threshold:.2f}}}$ or $x > Q_{{{1 - args.Biological_threshold:.2f}}}$"]
+            else :
+                Biosig_labels = [fr"$p$-value $> {args.Biological_threshold:.2f}$", fr"$p$-value $\leq {args.Biological_threshold:.2f}$"]
+        data['logpvalue']=data['p_value'].apply(lambda x:-np.log10(x))
+        sizes = data['logpvalue'].apply(lambda x: 2 + 20 * (x / max(data['logpvalue'])))
+        pvalue_levels = [0.05, 0.01, 0.001]
+        max_pvalue = np.max(data['logpvalue'])
+        pvalue_mapping = {p: 2 + 20 * (-np.log10(p) / max_pvalue) for p in pvalue_levels}
+        ticks, labels = adjusted_ticks_and_labels(minimum, maximum, bed, b, 10) ## change only if intron collapse
+        if args.scheme_loc == 'middle' :
+            create_lollipop_plot(ax[0 + args.histogram], data.loc[data['lfc']>=0,'Position'], data.loc[data['lfc']>=0,'lfc'], color=colors[data['lfc']>=0], marker=markers[data['lfc']>=0], alpha=alphas[data['lfc']>=0], size=sizes[data['lfc']>=0],stemline_remove=args.no_stem)
+            if args.highlight:
+                for hl in args.highlight : 
+                    protein_hl, feature=hl.split('-')
+                    if protein_hl == protein :
+                        highlight_region(bed_adjusted,ax[0 + args.histogram],feature)
+            create_lollipop_plot(ax[2 + args.histogram], data.loc[data['lfc']<0,'Position'], data.loc[data['lfc']<0,'lfc'], color=colors[data['lfc']<0], marker=markers[data['lfc']<0], alpha=alphas[data['lfc']<0], size=sizes[data['lfc']<0],Custom_Xaxis=[ticks, labels],stemline_remove=args.no_stem, xlabel = 'Nucleotide position' if args.X_axis == 'nuc' else 'Amino acid position' if args.X_axis == 'AA' else None)
+            if args.highlight:
+                for hl in args.highlight : 
+                    protein_hl, feature=hl.split('-')
+                    if protein_hl == protein :
+                        highlight_region(bed_adjusted,ax[2 + args.histogram],feature ,None,True)
+            leg=plot_genomic_regions(bed_adjusted,ax[1 + args.histogram], legend_loc='upper left', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum)
+            add_legend(fig, consequence_mapping, pvalue_mapping,transparency=Biosig_labels,add_legend=leg,fdr=args.fdr)
+        else :
+            create_lollipop_plot(ax[(args.scheme_loc != 'bottom') + args.histogram], data['Position'], data['lfc'], color=colors, marker=markers, alpha=alphas, size=sizes,stemline_remove=args.no_stem,Custom_Xaxis=[ticks, labels] if args.scheme_loc == 'top' else None, xlabel = 'Nucleotide position' if args.X_axis == 'nuc' else 'Amino acid position' if args.X_axis == 'AA' else None)
+            leg=plot_genomic_regions(bed_adjusted,ax[(args.scheme_loc == 'bottom') + args.histogram], legend_loc='upper left', title='',legend_title='Features',legend_mode=args.legend_mode,Maximum=maximum,Custom_Xaxis=[ticks, labels] if args.scheme_loc == 'bottom' else None ,xlabel = 'Nucleotide position' if args.X_axis == 'nuc' else 'Amino acid position' if args.X_axis == 'AA' else None)
+            add_legend(fig, consequence_mapping, pvalue_mapping,transparency=Biosig_labels,add_legend=leg,fdr=args.fdr)
+            if args.highlight:
+                for hl in args.highlight : 
+                    protein_hl, feature=hl.split('-')
+                    if protein_hl == protein :
+                        highlight_region(bed_adjusted,ax[(args.scheme_loc != 'bottom') + args.histogram],feature)
+        fig.savefig(args.output +'_'+protein + '.pdf',format="pdf",bbox_inches="tight")
